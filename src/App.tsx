@@ -1,28 +1,56 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { Sidebar } from "./components/Sidebar";
-import { Dashboard } from "./pages/Dashboard";
-import { StoreDirectory } from "./pages/StoreDirectory";
-import { StoreDetail } from "./pages/StoreDetail";
-import { ScraperAdmin } from "./pages/ScraperAdmin";
-import { Reports } from "./pages/Reports";
-import { Settings } from "./pages/Settings";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { ThemeProvider } from "@/lib/theme";
+import { ProfileProvider } from "@/lib/profile";
+import AppLayout from "@/components/AppLayout";
+import LoginPage from "@/pages/LoginPage";
+import { Dashboard } from "@/pages/Dashboard";
+import { StoreDirectory } from "@/pages/StoreDirectory";
+import { StoreDetail } from "@/pages/StoreDetail";
+import { ScraperAdmin } from "@/pages/ScraperAdmin";
+import { Reports } from "@/pages/Reports";
+import { Settings } from "@/pages/Settings";
+
+function ProtectedRoutes() {
+  const { session, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  if (!session) return <Navigate to="/login" replace />;
+
+  return (
+    <ProfileProvider>
+      <ThemeProvider>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="stores" element={<StoreDirectory />} />
+            <Route path="stores/:id" element={<StoreDetail />} />
+            <Route path="scrapers" element={<ScraperAdmin />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="settings" element={<Settings />} />
+          </Route>
+        </Routes>
+      </ThemeProvider>
+    </ProfileProvider>
+  );
+}
 
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="flex min-h-screen bg-background">
-        <Sidebar />
-        <main className="flex-1 overflow-auto">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/stores" element={<StoreDirectory />} />
-            <Route path="/stores/:id" element={<StoreDetail />} />
-            <Route path="/scrapers" element={<ScraperAdmin />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
-        </main>
-      </div>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/*" element={<ProtectedRoutes />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

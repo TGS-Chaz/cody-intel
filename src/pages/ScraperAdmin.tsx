@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase } from "@/lib/supabase";
 import { Radio, Play, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
 const EDGE_FN_URL = import.meta.env.VITE_SUPABASE_URL + "/functions/v1/scrape-website-menu";
@@ -45,12 +45,6 @@ const SCRAPERS: ScraperAction[] = [
     action: "lcb-audit-matches",
     body: { issuesOnly: true, limit: 50 },
   },
-  {
-    id: "platform-coverage",
-    label: "Coverage Report",
-    description: "Generate cross-platform coverage map for all active LCB-licensed stores",
-    action: "platform-coverage",
-  },
 ];
 
 export function ScraperAdmin() {
@@ -72,18 +66,20 @@ export function ScraperAdmin() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setResults((prev) => ({ ...prev, [scraper.id]: { ok: true, message: JSON.stringify(data).slice(0, 120) } }));
-    } catch (err: any) {
-      setResults((prev) => ({ ...prev, [scraper.id]: { ok: false, message: err.message } }));
+      setResults((prev) => ({ ...prev, [scraper.id]: { ok: true, message: JSON.stringify(data).slice(0, 140) } }));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setResults((prev) => ({ ...prev, [scraper.id]: { ok: false, message: msg } }));
     }
     setRunning(null);
   }
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-6 max-w-5xl mx-auto space-y-5 animate-fade-up">
       <div>
-        <h1 className="text-xl font-bold text-foreground">Scraper Admin</h1>
-        <p className="text-sm text-muted-foreground">Trigger data collection for all platforms</p>
+        <h1 className="text-foreground">Scraper Admin</h1>
+        <div className="header-underline mt-1" />
+        <p className="text-sm text-muted-foreground mt-1">Trigger data collection for all platforms</p>
       </div>
 
       <div className="grid gap-3">
@@ -91,26 +87,37 @@ export function ScraperAdmin() {
           const result = results[scraper.id];
           const isRunning = running === scraper.id;
           return (
-            <div key={scraper.id} className="rounded-lg border border-border bg-card p-4 flex items-center gap-4">
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                <Radio className="w-4 h-4 text-primary" />
+            <div
+              key={scraper.id}
+              className="rounded-lg border border-border bg-card p-4 flex items-center gap-4 shadow-premium card-hover"
+            >
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: "hsl(168 100% 42% / 0.1)" }}
+              >
+                <Radio className="w-4 h-4" style={{ color: "hsl(var(--primary))" }} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground">{scraper.label}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{scraper.description}</p>
                 {result && (
-                  <p className={`text-xs mt-1 flex items-center gap-1 ${result.ok ? "text-green-600" : "text-red-500"}`}>
-                    {result.ok ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-                    {result.message}
+                  <p className={`text-xs mt-1.5 flex items-center gap-1.5 ${result.ok ? "text-success" : "text-destructive"}`}>
+                    {result.ok
+                      ? <CheckCircle2 className="w-3 h-3 shrink-0" />
+                      : <AlertCircle className="w-3 h-3 shrink-0" />}
+                    <span className="font-mono-data truncate">{result.message}</span>
                   </p>
                 )}
               </div>
               <button
                 onClick={() => runScraper(scraper)}
                 disabled={isRunning || running !== null}
-                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-primary-foreground transition-colors disabled:opacity-50"
+                style={{ background: "hsl(var(--primary))" }}
               >
-                {isRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                {isRunning
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : <Play className="w-3 h-3" />}
                 {isRunning ? "Running…" : "Run"}
               </button>
             </div>
