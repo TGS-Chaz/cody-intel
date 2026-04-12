@@ -17,6 +17,7 @@ import { useProfile, profileInitials } from "@/lib/profile";
 import { useTheme } from "@/lib/theme";
 import codyIcon from "@/assets/cody-icon.svg";
 import CodyGlow from "@/components/CodyGlow";
+import UserAvatar from "@/components/UserAvatar";
 
 const navItems = [
   { to: "/",          icon: LayoutDashboard, label: "Dashboard",  end: true },
@@ -26,21 +27,6 @@ const navItems = [
   { to: "/settings",  icon: Settings,        label: "Settings" },
 ];
 
-function UserAvatar({ initials, size = 24 }: { initials: string; size?: number }) {
-  return (
-    <div
-      className="rounded-full flex items-center justify-center text-white font-semibold avatar-hover shrink-0"
-      style={{
-        width: size,
-        height: size,
-        fontSize: size * 0.4,
-        background: "linear-gradient(135deg, hsl(168 100% 36%), hsl(168 100% 28%))",
-      }}
-    >
-      {initials}
-    </div>
-  );
-}
 
 export default function AppLayout() {
   const location = useLocation();
@@ -140,10 +126,20 @@ export default function AppLayout() {
         <div className="p-3" style={{ borderTop: "1px solid var(--glass-border)" }}>
           {user && (
             <div className="flex items-center gap-2 px-2 py-1.5 rounded-md">
-              <UserAvatar initials={initials} size={24} />
-              <span className="text-[11px] text-foreground/70 truncate flex-1">
-                {profile?.full_name ?? user.email}
-              </span>
+              <UserAvatar
+                avatarUrl={profile?.avatar_url}
+                initials={initials}
+                size={28}
+                animated={false}
+              />
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="text-[11px] font-medium text-foreground/80 truncate leading-tight">
+                  {profile?.full_name ?? user.email?.split("@")[0]}
+                </span>
+                <span className="text-[10px] text-muted-foreground truncate leading-tight">
+                  {user.email}
+                </span>
+              </div>
               <button
                 onClick={handleSignOut}
                 className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
@@ -192,6 +188,15 @@ export default function AppLayout() {
           >
             intel
           </span>
+          <div className="flex-1" />
+          {user && (
+            <UserAvatar
+              avatarUrl={profile?.avatar_url}
+              initials={initials}
+              size={28}
+              animated={false}
+            />
+          )}
         </header>
 
         <div className="flex-1 overflow-auto pb-20 md:pb-0 dot-grid">
