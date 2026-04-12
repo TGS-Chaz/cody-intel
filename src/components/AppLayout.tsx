@@ -11,10 +11,12 @@ import {
   Sun,
   Moon,
   Sunset,
+  Building2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useProfile, profileInitials } from "@/lib/profile";
 import { useTheme } from "@/lib/theme";
+import { useOrg } from "@/lib/org";
 import codyIcon from "@/assets/cody-icon.svg";
 import CodyGlow from "@/components/CodyGlow";
 import UserAvatar from "@/components/UserAvatar";
@@ -34,6 +36,7 @@ export default function AppLayout() {
   const { signOut, user } = useAuth();
   const { profile } = useProfile();
   const { preference, toggle: toggleTheme } = useTheme();
+  const { org } = useOrg();
   const [_signingOut, setSigningOut] = useState(false);
 
   const handleSignOut = async () => {
@@ -166,6 +169,25 @@ export default function AppLayout() {
 
       {/* Main content */}
       <main className="flex-1 flex flex-col overflow-hidden">
+        {/* Desktop top bar — org info */}
+        <div
+          className="hidden md:flex items-center justify-end px-6 h-11 shrink-0"
+          style={{ borderBottom: "1px solid var(--glass-border-subtle)" }}
+        >
+          {org && (
+            <div className="flex items-center gap-2.5">
+              <p className="text-[11px] text-muted-foreground font-medium">{org.name}</p>
+              {org.logo_url ? (
+                <img src={org.logo_url} alt="" className="w-8 h-8 rounded-lg object-cover border border-border" />
+              ) : (
+                <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center border border-border">
+                  <Building2 className="w-4 h-4 text-muted-foreground" />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Mobile header */}
         <header
           className="md:hidden flex items-center px-4 h-12 gap-2"
@@ -189,6 +211,9 @@ export default function AppLayout() {
             intel
           </span>
           <div className="flex-1" />
+          {org?.logo_url && (
+            <img src={org.logo_url} alt="" className="w-7 h-7 rounded-md object-cover border border-border mr-1" />
+          )}
           {user && (
             <UserAvatar
               avatarUrl={profile?.avatar_url}

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { ProfileProvider } from "@/lib/profile";
+import { OrgProvider } from "@/lib/org";
 import AppLayout from "@/components/AppLayout";
 import LoginPage from "@/pages/LoginPage";
 import { Dashboard } from "@/pages/Dashboard";
@@ -26,6 +27,7 @@ function ProtectedRoutes() {
 
   return (
     <ProfileProvider>
+      <OrgProvider>
       <ThemeProvider>
         <Routes>
           <Route element={<AppLayout />}>
@@ -38,6 +40,7 @@ function ProtectedRoutes() {
           </Route>
         </Routes>
       </ThemeProvider>
+      </OrgProvider>
     </ProfileProvider>
   );
 }
