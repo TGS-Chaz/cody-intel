@@ -614,9 +614,10 @@ export function ScraperAdmin() {
   const isScrapeAllRunning = scrapeAll?.running === true;
   const anyPlatformRunning = Object.values(runStatuses).some((s) => s.state === "running");
 
-  const filteredUnmatched = unmatchedPlatformFilter
+  const filteredUnmatched = (unmatchedPlatformFilter
     ? unmatched.filter((u) => u.platform === unmatchedPlatformFilter)
-    : unmatched;
+    : unmatched
+  ).filter((u) => !/sandbox|test|demo/i.test(u.store_name ?? ""));
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
