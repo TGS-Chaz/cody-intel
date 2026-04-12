@@ -46,25 +46,34 @@ export default function LoginPage() {
         transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
         className="relative z-10 w-full max-w-sm mx-4"
       >
-        {/* Logo — identical to CRM */}
-        <div className="flex items-center justify-center gap-1.5 mb-10">
-          <img src={codyIcon} alt="" className="h-8 w-auto" />
-          <span className="text-[28px] font-semibold tracking-tight" style={{ letterSpacing: "-0.02em" }}>
-            <span style={{ color: "#00D4AA" }}>c</span>
-            <span className="text-gray-900">ody</span>
-          </span>
-          <span
-            className="ml-1 text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded self-end mb-1"
-            style={{ background: "hsl(168 100% 42% / 0.12)", color: "hsl(168 100% 42%)" }}
-          >
-            Intel
-          </span>
+        {/* Logo */}
+        <div className="flex items-center justify-center gap-2 mb-10">
+          <div className="relative shrink-0 flex items-center justify-center w-9 h-9">
+            <div
+              className="absolute inset-0 rounded-full pointer-events-none"
+              style={{
+                background: "radial-gradient(circle, hsl(168 100% 42% / 0.4) 0%, transparent 70%)",
+                filter: "blur(8px)",
+                transform: "scale(1.5)",
+              }}
+            />
+            <img src={codyIcon} alt="" className="relative h-7 w-auto" />
+          </div>
+          <div className="flex items-baseline leading-none" style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em" }}>
+            <span style={{ color: "#00D4AA" }}>Cody</span>
+            <span
+              className="ml-1.5 text-[11px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-sm self-center"
+              style={{ background: "hsl(168 100% 42% / 0.12)", color: "hsl(168 100% 42%)" }}
+            >
+              Intel
+            </span>
+          </div>
         </div>
 
         {/* Card */}
         <div className="rounded-xl p-6 bg-white border border-gray-200 shadow-xl shadow-gray-200/50">
           <h1 className="text-[17px] font-semibold text-gray-900 mb-1">Welcome back</h1>
-          <p className="text-[13px] text-gray-500 mb-6">Sign in to access market intelligence</p>
+          <p className="text-[13px] text-gray-500 mb-6">Cannabis Market Intelligence Platform</p>
 
           <form onSubmit={handleSignIn} className="space-y-4">
             <div className="space-y-1.5">
