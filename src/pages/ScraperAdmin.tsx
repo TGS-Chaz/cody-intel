@@ -10,7 +10,7 @@ interface Platform {
   source: string;          // matches dispensary_menus.source
   color: string;
   description: string;
-  action: string;
+  functionName: string;    // Supabase Edge Function to invoke
   actionBody?: Record<string, unknown>;
   blocked?: string;        // if set, shows this message instead of Run button
 }
@@ -22,7 +22,7 @@ const PLATFORMS: Platform[] = [
     source: "dutchie-api",
     color: "#00D4AA",
     description: "Discovers WA stores via Dutchie GraphQL API, matches to LCB stores by address, fetches complete menus",
-    action: "scrape-dutchie-all",
+    functionName: "scrape-dutchie",
   },
   {
     id: "leafly",
@@ -30,7 +30,7 @@ const PLATFORMS: Platform[] = [
     source: "leafly",
     color: "#3BB143",
     description: "Discovers WA dispensaries via Leafly city pages, matches to LCB stores, fetches complete menus",
-    action: "scrape-leafly-all",
+    functionName: "scrape-leafly",
   },
   {
     id: "posabit",
@@ -38,7 +38,7 @@ const PLATFORMS: Platform[] = [
     source: "posabit-api",
     color: "#5C6BC0",
     description: "Scans intel_stores websites for POSaBit embeds, fetches menus via MCX API",
-    action: "scrape-posabit-all",
+    functionName: "scrape-posabit",
   },
   {
     id: "weedmaps",
@@ -46,7 +46,7 @@ const PLATFORMS: Platform[] = [
     source: "weedmaps",
     color: "#F7931A",
     description: "Discovers WA dispensaries via Weedmaps directory, matches to LCB stores, fetches complete menus",
-    action: "scrape-weedmaps-all",
+    functionName: "scrape-weedmaps",
   },
   {
     id: "jane",
@@ -54,7 +54,7 @@ const PLATFORMS: Platform[] = [
     source: "jane",
     color: "#E91E63",
     description: "Jane Technologies menus — scraping blocked, requires proxy configuration",
-    action: "jane-scrape",
+    functionName: "scrape-jane",
     blocked: "Blocked — requires proxy fix",
   },
 ];
@@ -297,17 +297,14 @@ export function ScraperAdmin() {
         progressText: `Discovering ${platform.label} stores in Washington...`,
       });
 
-      const res = await fetch(`${url}/functions/v1/scrape-website-menu`, {
+      const res = await fetch(`${url}/functions/v1/${platform.functionName}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
           apikey: anonKey,
         },
-        body: JSON.stringify({
-          action: platform.action,
-          ...(platform.actionBody ?? {}),
-        }),
+        body: JSON.stringify(platform.actionBody ?? {}),
         signal: ctrl.signal,
       });
 
