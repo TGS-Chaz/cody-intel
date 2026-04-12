@@ -351,6 +351,7 @@ export function ScraperAdmin() {
   // Exclusion sets for link search
   const [storesWithMenuIds, setStoresWithMenuIds] = useState<Set<string>>(new Set());
   const [storesAlreadyLinkedIds, setStoresAlreadyLinkedIds] = useState<Set<string>>(new Set());
+  const [licenseMap, setLicenseMap] = useState<Record<string, string>>({});
 
   // Linking state
   const [linkingId, setLinkingId] = useState<string | null>(null);
@@ -400,7 +401,7 @@ export function ScraperAdmin() {
       if (allIntelStores.length === 0) {
         Promise.all([
           supabase.from("intel_stores")
-            .select("id, name, city, address, crm_contact_id, dutchie_slug, leafly_slug, weedmaps_slug, posabit_feed_key")
+            .select("id, name, city, county, address, zip, phone, lcb_license_id, crm_contact_id, dutchie_slug, leafly_slug, weedmaps_slug, posabit_feed_key")
             .eq("status", "active")
             .order("name"),
           supabase.from("dispensary_menus")
@@ -410,10 +411,15 @@ export function ScraperAdmin() {
             .select("matched_intel_store_id")
             .eq("matched", true)
             .not("matched_intel_store_id", "is", null),
-        ]).then(([storesRes, menusRes, linkedRes]) => {
+          supabase.from("lcb_licenses")
+            .select("id, license_number"),
+        ]).then(([storesRes, menusRes, linkedRes, licensesRes]) => {
           setAllIntelStores((storesRes.data as IntelStore[]) ?? []);
           setStoresWithMenuIds(new Set((menusRes.data ?? []).map((r: any) => r.intel_store_id as string)));
           setStoresAlreadyLinkedIds(new Set((linkedRes.data ?? []).map((r: any) => r.matched_intel_store_id as string)));
+          const lmap: Record<string, string> = {};
+          for (const r of (licensesRes.data ?? [])) { if (r.id && r.license_number) lmap[r.id] = r.license_number; }
+          setLicenseMap(lmap);
         });
       }
     }
@@ -885,62 +891,87 @@ export function ScraperAdmin() {
                         {/* Inline linking panel */}
                         {isLinking && (
                           <tr key={`${u.id}-link`} className="bg-accent/10">
-                            <td colSpan={6} className="px-4 pb-3 pt-2">
-                              <div className="space-y-2">
-                                <p className="text-[11px] text-muted-foreground">
-                                  Link <span className="font-semibold text-foreground">{u.store_name}</span>
-                                  {u.city ? ` (${u.city})` : ""} to an intel store:
-                                </p>
+                            <td colSpan={6} className="px-4 pb-4 pt-2">
+                              <div className="space-y-3">
+
+                                {/* Discovery info header */}
+                                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                                  <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-500/80 mb-1">Linking from {pi?.label ?? u.platform}</p>
+                                  <p className="text-[12px] font-semibold text-foreground">{u.store_name}</p>
+                                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                                    {u.address && <span className="text-[11px] text-muted-foreground">{u.address}{u.city ? `, ${u.city}` : ""}</span>}
+                                    {!u.address && u.city && <span className="text-[11px] text-muted-foreground">{u.city}</span>}
+                                    {u.phone && <span className="text-[11px] text-muted-foreground">· {u.phone}</span>}
+                                    {u.license_number && <span className="text-[11px] text-muted-foreground">· License #{u.license_number}</span>}
+                                  </div>
+                                </div>
+
                                 {/* Search input */}
-                                <div className="relative max-w-sm">
+                                <div className="relative max-w-lg">
                                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
                                   <input
                                     autoFocus
                                     value={linkQuery}
                                     onChange={(e) => { setLinkQuery(e.target.value); setLinkSelected(null); }}
-                                    placeholder="Search store name, city, address…"
+                                    placeholder="Search intel store by name, city, address…"
                                     className="w-full pl-7 pr-3 py-1.5 rounded-md border border-border bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                                   />
                                 </div>
+
                                 {/* Results */}
                                 {linkResults.length > 0 && (
-                                  <div className="rounded-md border border-border bg-card shadow-sm overflow-hidden max-w-sm">
-                                    {linkResults.map((s) => (
-                                      <button
-                                        key={s.id}
-                                        onClick={() => setLinkSelected(s)}
-                                        className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-accent/50 ${linkSelected?.id === s.id ? "bg-primary/10 border-l-2 border-primary" : ""}`}
-                                      >
-                                        <span className="font-medium text-foreground">{s.name}</span>
-                                        <span className="text-muted-foreground text-[11px] ml-2 capitalize">{(s.city ?? "").toLowerCase()}</span>
-                                        {s.address && <span className="text-muted-foreground text-[11px] ml-1">· {s.address}</span>}
-                                      </button>
-                                    ))}
+                                  <div className="rounded-md border border-border bg-card shadow-sm overflow-hidden max-w-lg divide-y divide-border/50">
+                                    {linkResults.map((s) => {
+                                      const licNum = s.lcb_license_id ? licenseMap[s.lcb_license_id] : null;
+                                      return (
+                                        <button
+                                          key={s.id}
+                                          onClick={() => setLinkSelected(s)}
+                                          className={`w-full text-left px-3 py-2.5 transition-colors hover:bg-accent/50 ${linkSelected?.id === s.id ? "bg-primary/10 border-l-2 border-primary" : ""}`}
+                                        >
+                                          <div className="flex items-baseline gap-2 flex-wrap">
+                                            <span className="text-[12px] font-semibold text-foreground">{s.name}</span>
+                                            {licNum && <span className="text-[10px] font-mono text-primary/80 bg-primary/10 px-1.5 py-0.5 rounded">#{licNum}</span>}
+                                          </div>
+                                          <div className="flex flex-wrap gap-x-2 gap-y-0 mt-0.5">
+                                            {s.address && <span className="text-[11px] text-muted-foreground">{s.address}{s.city ? `, ${s.city.charAt(0).toUpperCase() + s.city.slice(1).toLowerCase()}` : ""}</span>}
+                                            {s.county && <span className="text-[11px] text-muted-foreground/60">· {s.county.charAt(0).toUpperCase() + s.county.slice(1).toLowerCase()} Co.</span>}
+                                            {s.phone && <span className="text-[11px] text-muted-foreground/60">· {s.phone}</span>}
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
                                   </div>
                                 )}
                                 {linkQuery && linkResults.length === 0 && (
                                   <p className="text-[11px] text-muted-foreground">No matching stores found</p>
                                 )}
+
                                 {/* Confirm */}
-                                {linkSelected && (
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[11px] text-muted-foreground">
-                                      Link to <span className="font-semibold text-foreground">{linkSelected.name}</span>
-                                      {linkSelected.city ? ` · ${linkSelected.city}` : ""}
-                                    </span>
-                                    <button
-                                      onClick={() => handleConfirmLink(u, linkSelected)}
-                                      disabled={linkSaving}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium text-primary-foreground bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50"
-                                    >
-                                      {linkSaving ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
-                                      Confirm Link
-                                    </button>
-                                    <button onClick={handleCancelLink} className="text-[11px] text-muted-foreground hover:text-foreground">
-                                      Cancel
-                                    </button>
-                                  </div>
-                                )}
+                                {linkSelected && (() => {
+                                  const licNum = linkSelected.lcb_license_id ? licenseMap[linkSelected.lcb_license_id] : null;
+                                  return (
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-[11px] text-muted-foreground">
+                                        Link to <span className="font-semibold text-foreground">{linkSelected.name}</span>
+                                        {linkSelected.address ? ` — ${linkSelected.address}` : ""}
+                                        {linkSelected.city ? `, ${linkSelected.city.charAt(0).toUpperCase() + linkSelected.city.slice(1).toLowerCase()}` : ""}
+                                        {licNum ? ` · #${licNum}` : ""}
+                                      </span>
+                                      <button
+                                        onClick={() => handleConfirmLink(u, linkSelected)}
+                                        disabled={linkSaving}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium text-primary-foreground bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50"
+                                      >
+                                        {linkSaving ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
+                                        Confirm Link
+                                      </button>
+                                      <button onClick={handleCancelLink} className="text-[11px] text-muted-foreground hover:text-foreground">
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </td>
                           </tr>
