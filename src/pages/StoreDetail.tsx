@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import type { IntelStore, DispensaryMenu } from "@/lib/types";
-import { ArrowLeft, MapPin, Phone, Globe, Package, Calendar, Wifi } from "lucide-react";
+import {
+  ArrowLeft, Package, Calendar, Wifi, Pencil, Check, X, Loader2,
+} from "lucide-react";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface MenuItem {
   id: string;
@@ -22,21 +26,173 @@ const PLATFORM_LABELS: Record<string, string> = {
   jane: "Jane",
 };
 
-export function StoreDetail() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [store, setStore] = useState<IntelStore | null>(null);
-  const [menus, setMenus] = useState<DispensaryMenu[]>([]);
-  const [items, setItems] = useState<MenuItem[]>([]);
-  const [selectedMenu, setSelectedMenu] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+const STATUS_OPTS = [
+  { value: "active",  label: "Active" },
+  { value: "closed",  label: "Closed" },
+  { value: "unknown", label: "Unknown" },
+];
 
+const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
+  active:  { label: "Active",  cls: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" },
+  closed:  { label: "Closed",  cls: "text-red-400 bg-red-400/10 border-red-400/20" },
+  unknown: { label: "Unknown", cls: "text-amber-400 bg-amber-400/10 border-amber-400/20" },
+};
+
+// ─── EditableField ────────────────────────────────────────────────────────────
+
+interface EditableFieldProps {
+  label: string;
+  value: string | null;
+  onSave: (val: string | null) => Promise<void>;
+  type?: "text" | "url" | "tel" | "select";
+  options?: { value: string; label: string }[];
+  multiline?: boolean;
+  mono?: boolean;
+}
+
+function EditableField({ label, value, onSave, type = "text", options, multiline, mono }: EditableFieldProps) {
+  const [editing, setEditing]   = useState(false);
+  const [draft, setDraft]       = useState("");
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement & HTMLTextAreaElement & HTMLSelectElement>(null);
+
+  function startEdit() {
+    setDraft(value ?? "");
+    setError(null);
+    setEditing(true);
+  }
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(draft.trim() || null);
+      setEditing(false);
+    } catch (e: any) {
+      setError(e.message ?? "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function cancel() {
+    setEditing(false);
+    setError(null);
+  }
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  const inputCls =
+    "flex-1 px-2 py-1 rounded border border-primary/50 bg-background text-sm text-foreground " +
+    "focus:outline-none focus:ring-1 focus:ring-primary " +
+    (mono ? "font-mono-data" : "");
+
+  return (
+    <div className="group space-y-1">
+      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
+      {editing ? (
+        <div className="space-y-1">
+          <div className="flex items-start gap-1">
+            {type === "select" && options ? (
+              <select
+                ref={inputRef as any}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") cancel(); }}
+                className={inputCls}
+              >
+                <option value="">— clear —</option>
+                {options.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            ) : multiline ? (
+              <textarea
+                ref={inputRef as any}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") cancel(); }}
+                rows={3}
+                className={`${inputCls} resize-y`}
+              />
+            ) : (
+              <input
+                ref={inputRef as any}
+                type={type}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
+                className={inputCls}
+              />
+            )}
+            <button
+              onClick={save}
+              disabled={saving}
+              title="Save"
+              className="p-1 rounded text-emerald-500 hover:bg-emerald-500/10 transition-colors disabled:opacity-50 shrink-0 mt-0.5"
+            >
+              {saving
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Check className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              onClick={cancel}
+              title="Cancel"
+              className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0 mt-0.5"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {error && <p className="text-[10px] text-destructive">{error}</p>}
+        </div>
+      ) : (
+        <div className="flex items-start gap-1 min-h-[26px]">
+          <p
+            className={`flex-1 text-sm leading-relaxed break-words ${
+              value ? "text-foreground" : "text-muted-foreground/40 italic"
+            } ${mono ? "font-mono-data" : ""}`}
+          >
+            {value || "—"}
+          </p>
+          <button
+            onClick={startEdit}
+            title={`Edit ${label}`}
+            className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-all shrink-0"
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
+export function StoreDetail() {
+  const { id }   = useParams<{ id: string }>();
+  const navigate = useNavigate();
+
+  const [store, setStore]               = useState<IntelStore | null>(null);
+  const [menus, setMenus]               = useState<DispensaryMenu[]>([]);
+  const [items, setItems]               = useState<MenuItem[]>([]);
+  const [selectedMenu, setSelectedMenu] = useState<string | null>(null);
+  const [loading, setLoading]           = useState(true);
+
+  // ── Data loading ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!id) return;
     async function load() {
       const [storeRes, menusRes] = await Promise.all([
         supabase.from("intel_stores").select("*").eq("id", id).single(),
-        supabase.from("dispensary_menus").select("*").eq("intel_store_id", id).order("last_scraped_at", { ascending: false }),
+        supabase
+          .from("dispensary_menus")
+          .select("*")
+          .eq("intel_store_id", id)
+          .order("last_scraped_at", { ascending: false }),
       ]);
       setStore(storeRes.data);
       const menuList = menusRes.data ?? [];
@@ -59,23 +215,37 @@ export function StoreDetail() {
       .then(({ data }) => setItems(data ?? []));
   }, [selectedMenu]);
 
+  // ── Field save handler ──────────────────────────────────────────────────────
+  async function updateField(field: keyof IntelStore, val: string | null) {
+    const { error } = await supabase
+      .from("intel_stores")
+      .update({ [field]: val })
+      .eq("id", store!.id);
+    if (error) throw new Error(error.message);
+    setStore((prev) => (prev ? { ...prev, [field]: val } : prev));
+  }
+
+  // ── Loading / not-found states ──────────────────────────────────────────────
   if (loading) {
     return (
       <div className="p-6 max-w-5xl mx-auto space-y-4">
-        <div className="h-8 w-48 skeleton-shimmer rounded" />
-        <div className="h-32 skeleton-shimmer rounded-lg" />
+        <div className="h-6 w-36 skeleton-shimmer rounded" />
+        <div className="h-48 skeleton-shimmer rounded-lg" />
+        <div className="h-64 skeleton-shimmer rounded-lg" />
       </div>
     );
   }
 
-  if (!store) return (
-    <div className="p-6 text-muted-foreground text-sm">Store not found.</div>
-  );
+  if (!store) {
+    return <div className="p-6 text-muted-foreground text-sm">Store not found.</div>;
+  }
 
   const selectedMenuObj = menus.find((m) => m.id === selectedMenu);
+  const badge = STATUS_BADGE[store.status ?? "unknown"] ?? STATUS_BADGE.unknown;
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-5 animate-fade-up">
+      {/* Back link */}
       <button
         onClick={() => navigate("/stores")}
         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -83,55 +253,147 @@ export function StoreDetail() {
         <ArrowLeft className="w-4 h-4" /> Back to directory
       </button>
 
-      {/* Store header */}
-      <div className="rounded-lg border border-border bg-card p-5 shadow-premium stat-accent-teal">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-foreground">{store.name}</h1>
-            {store.trade_name && store.trade_name !== store.name && (
-              <p className="text-xs text-muted-foreground mt-0.5">LCB trade name: {store.trade_name}</p>
-            )}
-            <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground">
-              {store.address && (
-                <span className="flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-primary/70" />
-                  {store.address}, {store.city}
-                </span>
-              )}
-              {store.phone && (
-                <span className="flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-primary/70" />
-                  {store.phone}
-                </span>
-              )}
-              {store.website && (
-                <a
-                  href={store.website}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5 hover:text-primary transition-colors"
-                >
-                  <Globe className="w-3.5 h-3.5" /> Website
-                </a>
-              )}
+      {/* ── Store header ─────────────────────────────────────────────────── */}
+      <div className="rounded-lg border border-border bg-card p-5 shadow-premium stat-accent-teal space-y-1">
+        <div className="flex items-start justify-between gap-4 mb-3">
+          <div className="flex-1 min-w-0">
+            {/* Name — editable in place */}
+            <div className="group flex items-start gap-1">
+              <h1 className="text-foreground leading-tight flex-1 min-w-0">{store.name}</h1>
+              <button
+                onClick={() => {
+                  // trigger EditableField below by scrolling — handled inline
+                }}
+                className="hidden"
+              />
             </div>
           </div>
-          <div className="text-right shrink-0 space-y-1">
-            <p className="text-xs text-muted-foreground">{store.county} County</p>
-            <p className="text-xs text-muted-foreground">{store.state}</p>
-            {menus.length > 0 && (
-              <div className="flex items-center gap-1 justify-end">
-                <Wifi className="w-3 h-3 text-primary" />
-                <span className="text-[10px] font-medium" style={{ color: "hsl(var(--primary))" }}>
-                  {menus.length} platform{menus.length !== 1 ? "s" : ""}
-                </span>
-              </div>
-            )}
+          <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium border shrink-0 mt-1 ${badge.cls}`}>
+            {badge.label}
+          </span>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          {store.county ? `${store.county} County · ` : ""}{store.state}
+          {store.lcb_license_id ? ` · LCB #${store.lcb_license_id}` : ""}
+        </p>
+        {menus.length > 0 && (
+          <p className="text-[11px]" style={{ color: "hsl(var(--primary))" }}>
+            <Wifi className="w-3 h-3 inline mr-1" />
+            {menus.length} menu platform{menus.length !== 1 ? "s" : ""} · {store.total_products?.toLocaleString() ?? 0} products tracked
+          </p>
+        )}
+      </div>
+
+      {/* ── Editable store info ──────────────────────────────────────────── */}
+      <div className="rounded-lg border border-border bg-card shadow-premium overflow-hidden">
+        <div
+          className="px-4 py-2.5 bg-sidebar flex items-center gap-2"
+          style={{ borderBottom: "1px solid var(--glass-border)" }}
+        >
+          <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+            Store Information · hover a field to edit
+          </span>
+        </div>
+
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
+          {/* Column 1 */}
+          <EditableField
+            label="Name"
+            value={store.name}
+            onSave={(v) => updateField("name", v ?? store.name)}
+          />
+          <EditableField
+            label="Trade Name"
+            value={store.trade_name}
+            onSave={(v) => updateField("trade_name", v)}
+          />
+          <EditableField
+            label="Business Name (LCB Legal)"
+            value={store.business_name}
+            onSave={(v) => updateField("business_name", v)}
+          />
+          <EditableField
+            label="Status"
+            value={store.status}
+            type="select"
+            options={STATUS_OPTS}
+            onSave={(v) => updateField("status", v)}
+          />
+          <EditableField
+            label="Address"
+            value={store.address}
+            onSave={(v) => updateField("address", v)}
+          />
+          <EditableField
+            label="City"
+            value={store.city}
+            onSave={(v) => updateField("city", v)}
+          />
+          <EditableField
+            label="County"
+            value={store.county}
+            onSave={(v) => updateField("county", v)}
+          />
+          <EditableField
+            label="Phone"
+            value={store.phone}
+            type="tel"
+            onSave={(v) => updateField("phone", v)}
+          />
+          <EditableField
+            label="Website"
+            value={store.website}
+            type="url"
+            onSave={(v) => updateField("website", v)}
+          />
+          <div className="sm:col-span-2">
+            <EditableField
+              label="Notes"
+              value={store.notes}
+              multiline
+              onSave={(v) => updateField("notes", v)}
+            />
           </div>
         </div>
       </div>
 
-      {/* Platform tabs */}
+      {/* ── Platform / scraper data (read-only) ─────────────────────────── */}
+      {(store.dutchie_slug || store.leafly_slug || store.weedmaps_slug ||
+        store.posabit_feed_key || store.online_ordering_platform) && (
+        <div className="rounded-lg border border-border bg-card shadow-premium overflow-hidden">
+          <div
+            className="px-4 py-2.5 bg-sidebar flex items-center gap-2"
+            style={{ borderBottom: "1px solid var(--glass-border)" }}
+          >
+            <Wifi className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+              Platform Identifiers
+            </span>
+          </div>
+          <div className="p-5 grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {[
+              { label: "Dutchie Slug",       value: store.dutchie_slug },
+              { label: "Leafly Slug",         value: store.leafly_slug },
+              { label: "Weedmaps Slug",       value: store.weedmaps_slug },
+              { label: "POSaBit Feed Key",    value: store.posabit_feed_key },
+              { label: "POSaBit Merchant",    value: store.posabit_merchant },
+              { label: "Online Platform",     value: store.online_ordering_platform },
+            ]
+              .filter((r) => r.value)
+              .map((r) => (
+                <div key={r.label}>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                    {r.label}
+                  </p>
+                  <p className="text-xs font-mono-data text-foreground break-all">{r.value}</p>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Menu source tabs ─────────────────────────────────────────────── */}
       {menus.length > 0 && (
         <div>
           <h2 className="text-foreground mb-3">Menu Sources</h2>
@@ -149,7 +411,7 @@ export function StoreDetail() {
               >
                 {PLATFORM_LABELS[m.source] ?? m.source}
                 {m.menu_item_count != null && (
-                  <span className="ml-1.5 opacity-70">{m.menu_item_count}</span>
+                  <span className="ml-1.5 opacity-70">{m.menu_item_count.toLocaleString()}</span>
                 )}
               </button>
             ))}
@@ -163,7 +425,7 @@ export function StoreDetail() {
         </div>
       )}
 
-      {/* Products table */}
+      {/* ── Products table ───────────────────────────────────────────────── */}
       {items.length > 0 && (
         <div className="rounded-lg border border-border bg-card overflow-hidden shadow-premium">
           <div
@@ -172,7 +434,7 @@ export function StoreDetail() {
           >
             <Package className="w-3.5 h-3.5 text-muted-foreground" />
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-              {items.length} Products
+              {items.length} Products (showing first 200)
             </span>
           </div>
           <table className="w-full text-xs">
@@ -189,12 +451,16 @@ export function StoreDetail() {
               {items.map((item) => (
                 <tr key={item.id} className="hover:bg-accent/30 transition-colors">
                   <td className="px-4 py-1.5 text-foreground max-w-[180px] truncate">{item.raw_name}</td>
-                  <td className="px-4 py-1.5 text-muted-foreground hidden sm:table-cell">{item.raw_brand ?? "—"}</td>
+                  <td className="px-4 py-1.5 text-muted-foreground hidden sm:table-cell">
+                    {item.raw_brand ?? "—"}
+                  </td>
                   <td className="px-4 py-1.5 text-muted-foreground">{item.raw_category ?? "—"}</td>
                   <td className="px-4 py-1.5 text-muted-foreground font-mono-data">
                     {item.raw_price != null ? `$${item.raw_price.toFixed(2)}` : "—"}
                   </td>
-                  <td className="px-4 py-1.5 text-muted-foreground font-mono-data hidden sm:table-cell">{item.raw_thc ?? "—"}</td>
+                  <td className="px-4 py-1.5 text-muted-foreground font-mono-data hidden sm:table-cell">
+                    {item.raw_thc ?? "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
