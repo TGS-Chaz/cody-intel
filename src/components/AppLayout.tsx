@@ -16,6 +16,7 @@ import { useAuth } from "@/lib/auth";
 import { useProfile, profileInitials } from "@/lib/profile";
 import { useTheme } from "@/lib/theme";
 import codyIcon from "@/assets/cody-icon.svg";
+import CodyGlow from "@/components/CodyGlow";
 
 const navItems = [
   { to: "/",          icon: LayoutDashboard, label: "Dashboard",  end: true },
@@ -74,35 +75,21 @@ export default function AppLayout() {
       >
         {/* Logo */}
         <div
-          className="flex items-center gap-2 px-4 h-14"
+          className="flex items-center gap-1 px-4 h-14"
           style={{ borderBottom: "1px solid var(--glass-border-subtle)" }}
         >
-          {/* Dingo icon with teal glow aura */}
-          <div className="relative shrink-0 flex items-center justify-center w-8 h-8">
-            <div
-              className="absolute inset-0 rounded-full pointer-events-none"
-              style={{
-                background: "radial-gradient(circle, hsl(168 100% 42% / 0.35) 0%, transparent 70%)",
-                filter: "blur(6px)",
-                transform: "scale(1.4)",
-              }}
-            />
-            <img src={codyIcon} alt="" className="relative h-6 w-auto" />
-          </div>
-          <div>
-            <div
-              className="flex items-baseline leading-none"
-              style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em" }}
+          <CodyGlow intensity="medium" size="md">
+            <img src={codyIcon} alt="" className="h-6 w-auto shrink-0" style={{ filter: "brightness(3) saturate(0.1)" }} />
+          </CodyGlow>
+          <div className="flex items-baseline" style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1 }}>
+            <span style={{ color: "hsl(var(--primary))" }}>c</span>
+            <span className="text-foreground">ody</span>
+            <span
+              className="ml-1 text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-sm self-center"
+              style={{ background: "hsl(168 100% 42% / 0.12)", color: "hsl(168 100% 42%)" }}
             >
-              <span style={{ color: "hsl(var(--primary))" }}>Cody</span>
-              <span
-                className="ml-1 text-[11px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-sm self-center"
-                style={{ background: "hsl(168 100% 42% / 0.12)", color: "hsl(168 100% 42%)" }}
-              >
-                Intel
-              </span>
-            </div>
-            <p className="text-[9px] text-muted-foreground tracking-wide mt-0.5">Cannabis Market Data</p>
+              intel
+            </span>
           </div>
         </div>
 
@@ -191,29 +178,19 @@ export default function AppLayout() {
             borderBottom: "1px solid var(--glass-border)",
           }}
         >
-          {/* Dingo + glow, mobile */}
-          <div className="relative shrink-0 flex items-center justify-center w-7 h-7">
-            <div
-              className="absolute inset-0 rounded-full pointer-events-none"
-              style={{
-                background: "radial-gradient(circle, hsl(168 100% 42% / 0.35) 0%, transparent 70%)",
-                filter: "blur(5px)",
-                transform: "scale(1.4)",
-              }}
-            />
-            <img src={codyIcon} alt="" className="relative h-5 w-auto" />
-          </div>
+          <img src={codyIcon} alt="" className="h-5 w-auto shrink-0" />
           <div
-            className="flex items-baseline"
-            style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1 }}
+            className="flex items-baseline ml-1"
+            style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1 }}
           >
-            <span style={{ color: "hsl(var(--primary))" }}>Cody</span>
+            <span style={{ color: "hsl(var(--primary))" }}>c</span>
+            <span className="text-foreground">ody</span>
           </div>
           <span
-            className="text-[9px] font-bold uppercase tracking-widest px-1 py-0.5 rounded-sm"
+            className="ml-1 text-[9px] font-bold uppercase tracking-widest px-1 py-0.5 rounded-sm"
             style={{ background: "hsl(168 100% 42% / 0.12)", color: "hsl(168 100% 42%)" }}
           >
-            Intel
+            intel
           </span>
         </header>
 
