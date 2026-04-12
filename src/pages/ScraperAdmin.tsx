@@ -1,6 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { Play, Square, CheckCircle2, AlertCircle, RefreshCw, AlertTriangle, Layers } from "lucide-react";
+import type { IntelStore } from "@/lib/types";
+import {
+  Play, Square, CheckCircle2, AlertCircle, RefreshCw, AlertTriangle,
+  Layers, Link2, Search, X, Zap,
+} from "lucide-react";
 
 // ─── Platform definitions ─────────────────────────────────────────────────────
 
@@ -15,7 +19,6 @@ interface Platform {
   blocked?: string;
 }
 
-// Scrape-All order: Dutchie first (populates websites), POSaBit second (uses websites)
 const PLATFORMS: Platform[] = [
   {
     id: "dutchie",
@@ -65,10 +68,15 @@ const PLATFORMS: Platform[] = [
   },
 ];
 
-// Platforms that can be run in Scrape All (excludes blocked)
 const SCRAPE_ALL_PLATFORMS = PLATFORMS.filter((p) => !p.blocked);
-
 const TOTAL_STORES = 458;
+
+// Platform info for unmatched view
+const PLATFORM_INFO: Record<string, { letter: string; color: string; label: string; slugField: string; functionName: string }> = {
+  dutchie:  { letter: "D", color: "#00D4AA", label: "Dutchie",   slugField: "dutchie_slug",  functionName: "scrape-dutchie"  },
+  leafly:   { letter: "L", color: "#3BB143", label: "Leafly",    slugField: "leafly_slug",   functionName: "scrape-leafly"   },
+  weedmaps: { letter: "W", color: "#F7931A", label: "Weedmaps",  slugField: "weedmaps_slug", functionName: "scrape-weedmaps" },
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,7 +96,7 @@ interface RunStatus {
 
 interface ScrapeAllState {
   running: boolean;
-  platformIdx: number;   // index into SCRAPE_ALL_PLATFORMS
+  platformIdx: number;
   progressText: string;
   totalScraped: number;
   totalProducts: number;
@@ -108,11 +116,31 @@ interface LogEntry {
   timestamp: number;
 }
 
-// ─── Scrape log component ─────────────────────────────────────────────────────
+interface UnmatchedDiscovery {
+  id: string;
+  platform: string;
+  store_name: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  phone: string | null;
+  website: string | null;
+  license_number: string | null;
+  platform_slug: string | null;
+  platform_id: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  discovered_at: string;
+  matched: boolean;
+  matched_intel_store_id: string | null;
+}
+
+type AdminView = "platforms" | "unmatched";
+
+// ─── Scrape log ───────────────────────────────────────────────────────────────
 
 function ScrapeLog({ entries }: { entries: LogEntry[] }) {
   if (entries.length === 0) return null;
-
   const icon = (s: LogEntryStatus) => {
     if (s === "saved")     return "✅";
     if (s === "skipped")   return "⏭️";
@@ -120,13 +148,9 @@ function ScrapeLog({ entries }: { entries: LogEntry[] }) {
     if (s === "no-widget") return "🔍";
     return "❌";
   };
-
-  // newest at top
-  const ordered = [...entries].reverse();
-
   return (
     <div className="mt-1 max-h-44 overflow-y-auto rounded-md bg-muted/20 border border-border/40 p-2 space-y-0.5 font-mono text-[10px]">
-      {ordered.map((e, i) => (
+      {[...entries].reverse().map((e, i) => (
         <div key={i} className="flex items-baseline gap-1.5 leading-relaxed">
           <span className="shrink-0">{icon(e.status)}</span>
           <span className="font-semibold text-foreground truncate">{e.storeName}</span>
@@ -134,16 +158,14 @@ function ScrapeLog({ entries }: { entries: LogEntry[] }) {
           {e.status === "saved" && e.products != null && (
             <span className="text-muted-foreground shrink-0">· {e.products} products</span>
           )}
-          {e.reason && (
-            <span className="text-muted-foreground/70 italic truncate">· {e.reason}</span>
-          )}
+          {e.reason && <span className="text-muted-foreground/70 italic truncate">· {e.reason}</span>}
         </div>
       ))}
     </div>
   );
 }
 
-// ─── Core scrape helper (shared by handleScrape + handleScrapeAll) ────────────
+// ─── Core scrape helper ───────────────────────────────────────────────────────
 
 async function runPlatformBatch(
   platform: Platform,
@@ -163,14 +185,7 @@ async function runPlatformBatch(
   };
 
   onProgress("Discovering stores...");
-
-  const discoverRes = await fetch(fnUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ action: "discover" }),
-    signal,
-  });
-
+  const discoverRes = await fetch(fnUrl, { method: "POST", headers, body: JSON.stringify({ action: "discover" }), signal });
   const discoverData = await discoverRes.json();
   if (!discoverRes.ok) throw new Error(discoverData.error ?? `Discover HTTP ${discoverRes.status}`);
 
@@ -181,100 +196,77 @@ async function runPlatformBatch(
   }
 
   const totalBatches = Math.ceil(candidates.length / platform.batchSize);
-  let totalScraped = 0;
-  let totalProducts = 0;
+  let totalScraped = 0, totalProducts = 0;
 
   for (let b = 0; b < totalBatches; b++) {
     if (signal.aborted) break;
-
-    onProgress(
-      `Batch ${b + 1}/${totalBatches} · ${totalScraped} scraped · ${totalProducts.toLocaleString()} products`,
-    );
-
+    onProgress(`Batch ${b + 1}/${totalBatches} · ${totalScraped} scraped · ${totalProducts.toLocaleString()} products`);
     const batch = candidates.slice(b * platform.batchSize, (b + 1) * platform.batchSize);
-    const batchRes = await fetch(fnUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ action: "scrape-batch", stores: batch }),
-      signal,
-    });
-
+    const batchRes = await fetch(fnUrl, { method: "POST", headers, body: JSON.stringify({ action: "scrape-batch", stores: batch }), signal });
     if (batchRes.ok) {
       const batchData = await batchRes.json();
       totalScraped += batchData.scraped ?? 0;
       totalProducts += batchData.products_saved ?? 0;
-
-      // Parse batch results into log entries
       const entries: LogEntry[] = (batchData.results ?? []).map((r: any): LogEntry => {
-        let status: LogEntryStatus = "saved";
         const s = r.status ?? "";
+        let status: LogEntryStatus = "saved";
         if (s === "skipped") status = "skipped";
         else if (s === "empty-menu") status = "empty";
         else if (s === "no-widget") status = "no-widget";
         else if (s === "success") status = "saved";
-        else status = "failed"; // error, vps-*, mcx-failed
-
-        return {
-          storeName: r.store ?? "Unknown",
-          city: r.city ?? null,
-          status,
-          products: r.products ?? undefined,
-          reason: r.reason ?? undefined,
-          existingSource: r.existingSource ?? undefined,
-          timestamp: Date.now(),
-        };
+        else status = "failed";
+        return { storeName: r.store ?? "Unknown", city: r.city ?? null, status, products: r.products, reason: r.reason, existingSource: r.existingSource, timestamp: Date.now() };
       });
-
       if (entries.length > 0) onBatchDone(entries);
     }
-
     await onStatsRefresh();
   }
-
   return { totalScraped, totalProducts };
+}
+
+// ─── Build scrape candidate from unmatched discovery ─────────────────────────
+
+function buildScrapeCandidate(d: UnmatchedDiscovery, intel: IntelStore): any | null {
+  const base = {
+    intelStoreId: intel.id,
+    intelStoreName: intel.name,
+    crm_contact_id: (intel as any).crm_contact_id ?? null,
+    matchType: "manual",
+    intelCity: intel.city ?? null,
+    menuLastUpdated: null,
+    currentPlatform: null,
+  };
+  if (d.platform === "dutchie")  return { ...base, dutchieId: d.platform_id, cName: d.platform_slug };
+  if (d.platform === "leafly")   return { ...base, slug: d.platform_slug, leaflyName: d.store_name };
+  if (d.platform === "weedmaps") return { ...base, slug: d.platform_slug, wmName: d.store_name, menuUrl: `https://weedmaps.com/dispensaries/${d.platform_slug}/menu` };
+  return null;
 }
 
 // ─── Platform Card ────────────────────────────────────────────────────────────
 
 function PlatformCard({
-  platform,
-  stats,
-  runStatus,
-  logEntries,
-  onScrape,
-  onStop,
+  platform, stats, runStatus, logEntries, onScrape, onStop,
 }: {
-  platform: Platform;
-  stats: PlatformStats | null;
-  runStatus: RunStatus;
-  logEntries: LogEntry[];
-  onScrape: () => void;
-  onStop: () => void;
+  platform: Platform; stats: PlatformStats | null; runStatus: RunStatus;
+  logEntries: LogEntry[]; onScrape: () => void; onStop: () => void;
 }) {
   const isRunning = runStatus.state === "running";
-
   const freshnessLabel = (iso: string | null) => {
     if (!iso) return "Never";
     const diff = Date.now() - new Date(iso).getTime();
     const hours = Math.floor(diff / 3_600_000);
-    if (hours < 1) return "< 1 hour ago";
+    if (hours < 1) return "< 1h ago";
     if (hours < 24) return `${hours}h ago`;
     return `${Math.floor(hours / 24)}d ago`;
   };
-
   const freshnessColor = (iso: string | null) => {
     if (!iso) return "text-muted-foreground";
-    const hours = (Date.now() - new Date(iso).getTime()) / 3_600_000;
-    if (hours < 24) return "text-emerald-500";
-    if (hours < 72) return "text-amber-400";
-    return "text-red-400";
+    const h = (Date.now() - new Date(iso).getTime()) / 3_600_000;
+    return h < 24 ? "text-emerald-500" : h < 72 ? "text-amber-400" : "text-red-400";
   };
 
   return (
-    <div
-      className="rounded-xl border border-border bg-card flex flex-col gap-4 p-5 shadow-sm"
-      style={{ borderTop: `3px solid ${platform.color}` }}
-    >
+    <div className="rounded-xl border border-border bg-card flex flex-col gap-4 p-5 shadow-sm" style={{ borderTop: `3px solid ${platform.color}` }}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <h3 className="text-sm font-bold text-foreground">{platform.label}</h3>
@@ -283,13 +275,12 @@ function PlatformCard({
         {runStatus.state === "done" && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />}
         {runStatus.state === "error" && <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />}
       </div>
-
       <div className="grid grid-cols-3 gap-2">
         <div className="rounded-lg bg-muted/40 p-2.5 text-center">
           <p className="text-lg font-bold" style={{ fontFamily: "'JetBrains Mono', monospace", color: platform.color }}>
             {stats ? stats.storesLinked : "—"}
           </p>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">/ {TOTAL_STORES} stores</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">/ {TOTAL_STORES}</p>
         </div>
         <div className="rounded-lg bg-muted/40 p-2.5 text-center">
           <p className="text-lg font-bold text-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
@@ -304,45 +295,33 @@ function PlatformCard({
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">last run</p>
         </div>
       </div>
-
       {isRunning && (
         <div>
           <div className="h-1.5 rounded-full bg-muted overflow-hidden">
             <div className="h-full rounded-full animate-pulse" style={{ width: "100%", background: platform.color, opacity: 0.7 }} />
           </div>
-          {runStatus.progressText && (
-            <p className="text-[10px] text-muted-foreground mt-1.5 font-mono truncate">{runStatus.progressText}</p>
-          )}
+          {runStatus.progressText && <p className="text-[10px] text-muted-foreground mt-1.5 font-mono truncate">{runStatus.progressText}</p>}
         </div>
       )}
-
       {(runStatus.state === "done" || runStatus.state === "error") && runStatus.message && (
         <p className={`text-[11px] flex items-start gap-1.5 ${runStatus.state === "error" ? "text-destructive" : "text-emerald-500"}`}>
-          {runStatus.state === "error"
-            ? <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
-            : <CheckCircle2 className="w-3 h-3 mt-0.5 shrink-0" />}
+          {runStatus.state === "error" ? <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" /> : <CheckCircle2 className="w-3 h-3 mt-0.5 shrink-0" />}
           <span className="font-mono-data">{runStatus.message}</span>
         </p>
       )}
-
-      {/* Scrape results log */}
       {logEntries.length > 0 && <ScrapeLog entries={logEntries} />}
-
       <div className="mt-auto flex gap-2">
         {platform.blocked ? (
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 italic">
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-            {platform.blocked}
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />{platform.blocked}
           </div>
         ) : isRunning ? (
           <button onClick={onStop} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors">
-            <Square className="w-3 h-3" />
-            Stop
+            <Square className="w-3 h-3" />Stop
           </button>
         ) : (
           <button onClick={onScrape} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium text-primary-foreground transition-colors hover:opacity-90" style={{ background: platform.color }}>
-            <Play className="w-3 h-3" />
-            Scrape All
+            <Play className="w-3 h-3" />Scrape All
           </button>
         )}
       </div>
@@ -362,14 +341,29 @@ export function ScraperAdmin() {
     Object.fromEntries(PLATFORMS.map((p) => [p.id, []]))
   );
 
+  // Unmatched tab state
+  const [activeView, setActiveView] = useState<AdminView>("platforms");
+  const [unmatched, setUnmatched] = useState<UnmatchedDiscovery[]>([]);
+  const [unmatchedLoading, setUnmatchedLoading] = useState(false);
+  const [unmatchedPlatformFilter, setUnmatchedPlatformFilter] = useState("");
+  const [allIntelStores, setAllIntelStores] = useState<IntelStore[]>([]);
+
+  // Linking state
+  const [linkingId, setLinkingId] = useState<string | null>(null);
+  const [linkQuery, setLinkQuery] = useState("");
+  const [linkSelected, setLinkSelected] = useState<IntelStore | null>(null);
+  const [linkSaving, setLinkSaving] = useState(false);
+  const [linkedRows, setLinkedRows] = useState<Record<string, IntelStore>>({});
+  const [scrapingIds, setScrapingIds] = useState<Set<string>>(new Set());
+  const [scrapedIds, setScrapedIds] = useState<Set<string>>(new Set());
+  const [scrapeErrors, setScrapeErrors] = useState<Record<string, string>>({});
+
   const abortRefs = useRef<Record<string, AbortController>>({});
   const scrapeAllAbortRef = useRef<AbortController | null>(null);
   const pollRefs = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
   const loadStats = useCallback(async () => {
-    const { data } = await supabase
-      .from("dispensary_menus")
-      .select("source, intel_store_id, menu_item_count, last_scraped_at");
+    const { data } = await supabase.from("dispensary_menus").select("source, intel_store_id, menu_item_count, last_scraped_at");
     if (!data) return;
     const grouped: Record<string, PlatformStats> = {};
     for (const platform of PLATFORMS) {
@@ -377,50 +371,49 @@ export function ScraperAdmin() {
       const linked = rows.filter((r) => r.intel_store_id !== null);
       const products = rows.reduce((sum, r) => sum + (r.menu_item_count ?? 0), 0);
       const dates = rows.map((r) => r.last_scraped_at).filter(Boolean) as string[];
-      grouped[platform.id] = {
-        storesLinked: linked.length,
-        productsScraped: products,
-        lastScraped: dates.length > 0 ? dates.sort().at(-1)! : null,
-      };
+      grouped[platform.id] = { storesLinked: linked.length, productsScraped: products, lastScraped: dates.length > 0 ? dates.sort().at(-1)! : null };
     }
     setStats(grouped);
   }, []);
 
+  const loadUnmatched = useCallback(async () => {
+    setUnmatchedLoading(true);
+    const { data } = await supabase
+      .from("intel_unmatched_discoveries")
+      .select("*")
+      .eq("matched", false)
+      .order("platform")
+      .order("store_name");
+    setUnmatched(data ?? []);
+    setUnmatchedLoading(false);
+  }, []);
+
   useEffect(() => { loadStats(); }, [loadStats]);
 
-  const startPolling = (id: string) => {
-    stopPolling(id);
-    pollRefs.current[id] = setInterval(loadStats, 5000);
-  };
-  const stopPolling = (id: string) => {
-    if (pollRefs.current[id]) { clearInterval(pollRefs.current[id]); delete pollRefs.current[id]; }
-  };
+  useEffect(() => {
+    if (activeView === "unmatched") {
+      loadUnmatched();
+      if (allIntelStores.length === 0) {
+        supabase.from("intel_stores")
+          .select("id, name, city, address, crm_contact_id, dutchie_slug, leafly_slug, weedmaps_slug, posabit_feed_key")
+          .eq("status", "active")
+          .order("name")
+          .then(({ data }) => setAllIntelStores((data as IntelStore[]) ?? []));
+      }
+    }
+  }, [activeView]);
 
-  const setStatus = (id: string, update: Partial<RunStatus>) => {
-    setRunStatuses((prev) => ({ ...prev, [id]: { ...prev[id], ...update } }));
-  };
-
-  const clearLog = (id: string) => {
-    setPlatformLogs((prev) => ({ ...prev, [id]: [] }));
-  };
-
-  const appendLog = (id: string, entries: LogEntry[]) => {
-    setPlatformLogs((prev) => ({ ...prev, [id]: [...(prev[id] ?? []), ...entries] }));
-  };
-
-  // ── Get session + env (shared) ────────────────────────────────────────────
+  const startPolling = (id: string) => { stopPolling(id); pollRefs.current[id] = setInterval(loadStats, 5000); };
+  const stopPolling = (id: string) => { if (pollRefs.current[id]) { clearInterval(pollRefs.current[id]); delete pollRefs.current[id]; } };
+  const setStatus = (id: string, update: Partial<RunStatus>) => { setRunStatuses((prev) => ({ ...prev, [id]: { ...prev[id], ...update } })); };
+  const clearLog = (id: string) => setPlatformLogs((prev) => ({ ...prev, [id]: [] }));
+  const appendLog = (id: string, entries: LogEntry[]) => setPlatformLogs((prev) => ({ ...prev, [id]: [...(prev[id] ?? []), ...entries] }));
 
   const getCallParams = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error("Not logged in");
-    return {
-      session,
-      supabaseUrl: import.meta.env.VITE_SUPABASE_URL as string,
-      anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY as string,
-    };
+    return { session, supabaseUrl: import.meta.env.VITE_SUPABASE_URL as string, anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY as string };
   };
-
-  // ── Individual platform scrape ─────────────────────────────────────────────
 
   const handleScrape = async (platform: Platform) => {
     const ctrl = new AbortController();
@@ -428,7 +421,6 @@ export function ScraperAdmin() {
     clearLog(platform.id);
     setStatus(platform.id, { state: "running", message: "", progressText: "Starting..." });
     startPolling(platform.id);
-
     try {
       const { session, supabaseUrl, anonKey } = await getCallParams();
       const { totalScraped, totalProducts } = await runPlatformBatch(
@@ -437,17 +429,12 @@ export function ScraperAdmin() {
         loadStats,
         (entries) => appendLog(platform.id, entries),
       );
-      setStatus(platform.id, {
-        state: "done",
-        message: `${totalScraped} stores scraped · ${totalProducts.toLocaleString()} products saved`,
-        progressText: undefined,
-      });
+      setStatus(platform.id, { state: "done", message: `${totalScraped} stores · ${totalProducts.toLocaleString()} products`, progressText: undefined });
+      // Refresh unmatched count if tab is visible
+      if (activeView === "unmatched") loadUnmatched();
     } catch (err: any) {
-      if (err.name === "AbortError") {
-        setStatus(platform.id, { state: "idle", message: "", progressText: undefined });
-      } else {
-        setStatus(platform.id, { state: "error", message: err.message ?? "Unknown error", progressText: undefined });
-      }
+      if (err.name === "AbortError") setStatus(platform.id, { state: "idle", message: "", progressText: undefined });
+      else setStatus(platform.id, { state: "error", message: err.message ?? "Unknown error", progressText: undefined });
     } finally {
       stopPolling(platform.id);
       delete abortRefs.current[platform.id];
@@ -460,94 +447,147 @@ export function ScraperAdmin() {
     setStatus(platformId, { state: "idle", message: "Stopped by user", progressText: undefined });
   };
 
-  // ── Scrape All Platforms ───────────────────────────────────────────────────
-
   const handleScrapeAll = async () => {
     const ctrl = new AbortController();
     scrapeAllAbortRef.current = ctrl;
-
-    setScrapeAll({
-      running: true, platformIdx: 0,
-      progressText: "Starting...",
-      totalScraped: 0, totalProducts: 0,
-      done: false,
-    });
-
-    let grandScraped = 0;
-    let grandProducts = 0;
-
+    setScrapeAll({ running: true, platformIdx: 0, progressText: "Starting...", totalScraped: 0, totalProducts: 0, done: false });
+    let grandScraped = 0, grandProducts = 0;
     try {
       const { session, supabaseUrl, anonKey } = await getCallParams();
-
       for (let i = 0; i < SCRAPE_ALL_PLATFORMS.length; i++) {
         if (ctrl.signal.aborted) break;
-
         const platform = SCRAPE_ALL_PLATFORMS[i];
-
         setScrapeAll((prev) => prev ? { ...prev, platformIdx: i, progressText: `${platform.label}: discovering...` } : prev);
         clearLog(platform.id);
         setStatus(platform.id, { state: "running", message: "", progressText: "Starting via Scrape All..." });
         startPolling(platform.id);
-
         try {
           const { totalScraped, totalProducts } = await runPlatformBatch(
             platform, session, supabaseUrl, anonKey, ctrl.signal,
-            (text) => {
-              setStatus(platform.id, { progressText: text });
-              setScrapeAll((prev) => prev ? {
-                ...prev,
-                progressText: `${platform.label} (${i + 1}/${SCRAPE_ALL_PLATFORMS.length}): ${text}`,
-              } : prev);
-            },
+            (text) => { setStatus(platform.id, { progressText: text }); setScrapeAll((prev) => prev ? { ...prev, progressText: `${platform.label} (${i + 1}/${SCRAPE_ALL_PLATFORMS.length}): ${text}` } : prev); },
             loadStats,
             (entries) => appendLog(platform.id, entries),
           );
-
-          grandScraped += totalScraped;
-          grandProducts += totalProducts;
-
-          setStatus(platform.id, {
-            state: "done",
-            message: `${totalScraped} stores · ${totalProducts.toLocaleString()} products`,
-            progressText: undefined,
-          });
+          grandScraped += totalScraped; grandProducts += totalProducts;
+          setStatus(platform.id, { state: "done", message: `${totalScraped} stores · ${totalProducts.toLocaleString()} products`, progressText: undefined });
           setScrapeAll((prev) => prev ? { ...prev, totalScraped: grandScraped, totalProducts: grandProducts } : prev);
         } catch (err: any) {
           if (err.name === "AbortError") break;
           setStatus(platform.id, { state: "error", message: err.message, progressText: undefined });
-          // Continue to next platform despite error
-        } finally {
-          stopPolling(platform.id);
-        }
+        } finally { stopPolling(platform.id); }
       }
     } catch (err: any) {
-      if (err.name !== "AbortError") {
-        setScrapeAll((prev) => prev ? { ...prev, running: false, done: true, error: err.message } : prev);
-        return;
-      }
+      if (err.name !== "AbortError") { setScrapeAll((prev) => prev ? { ...prev, running: false, done: true, error: err.message } : prev); return; }
     }
-
     const wasStopped = ctrl.signal.aborted;
-    setScrapeAll({
-      running: false, platformIdx: SCRAPE_ALL_PLATFORMS.length - 1,
-      progressText: "",
-      totalScraped: grandScraped, totalProducts: grandProducts,
-      done: true,
-      error: wasStopped ? "Stopped by user" : undefined,
-    });
+    setScrapeAll({ running: false, platformIdx: SCRAPE_ALL_PLATFORMS.length - 1, progressText: "", totalScraped: grandScraped, totalProducts: grandProducts, done: true, error: wasStopped ? "Stopped by user" : undefined });
     scrapeAllAbortRef.current = null;
+    if (activeView === "unmatched") loadUnmatched();
   };
 
   const handleStopAll = () => {
     scrapeAllAbortRef.current?.abort();
-    // Also abort any individually running platforms
-    for (const id of Object.keys(abortRefs.current)) {
-      abortRefs.current[id]?.abort();
+    for (const id of Object.keys(abortRefs.current)) abortRefs.current[id]?.abort();
+  };
+
+  // ── Linking handlers ───────────────────────────────────────────────────────
+
+  const handleStartLink = (discoveryId: string) => {
+    setLinkingId(discoveryId);
+    setLinkQuery("");
+    setLinkSelected(null);
+  };
+
+  const handleCancelLink = () => {
+    setLinkingId(null);
+    setLinkQuery("");
+    setLinkSelected(null);
+  };
+
+  const handleConfirmLink = async (discovery: UnmatchedDiscovery, intel: IntelStore) => {
+    setLinkSaving(true);
+    try {
+      // Mark discovery as matched
+      await supabase.from("intel_unmatched_discoveries")
+        .update({ matched: true, matched_intel_store_id: intel.id })
+        .eq("id", discovery.id);
+
+      // Save platform slug to intel_stores
+      const pi = PLATFORM_INFO[discovery.platform];
+      if (pi?.slugField && discovery.platform_slug) {
+        await supabase.from("intel_stores")
+          .update({ [pi.slugField]: discovery.platform_slug })
+          .eq("id", intel.id);
+      }
+
+      setLinkedRows((prev) => ({ ...prev, [discovery.id]: intel }));
+      setUnmatched((prev) => prev.filter((u) => u.id !== discovery.id));
+      setLinkingId(null);
+      setLinkQuery("");
+      setLinkSelected(null);
+    } finally {
+      setLinkSaving(false);
     }
   };
 
+  const handleScrapeLinked = async (discovery: UnmatchedDiscovery) => {
+    const intel = linkedRows[discovery.id];
+    if (!intel) return;
+    const pi = PLATFORM_INFO[discovery.platform];
+    if (!pi?.functionName) return;
+    const candidate = buildScrapeCandidate(discovery, intel);
+    if (!candidate) return;
+
+    setScrapingIds((prev) => new Set([...prev, discovery.id]));
+    setScrapeErrors((prev) => { const n = { ...prev }; delete n[discovery.id]; return n; });
+
+    try {
+      const { session, supabaseUrl, anonKey } = await getCallParams();
+      const res = await fetch(`${supabaseUrl}/functions/v1/${pi.functionName}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}`, apikey: anonKey },
+        body: JSON.stringify({ action: "scrape-batch", stores: [candidate] }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const scraped = data.scraped ?? 0;
+        if (scraped > 0) {
+          setScrapedIds((prev) => new Set([...prev, discovery.id]));
+          await loadStats();
+        } else {
+          setScrapeErrors((prev) => ({ ...prev, [discovery.id]: data.results?.[0]?.status ?? "empty" }));
+        }
+      } else {
+        setScrapeErrors((prev) => ({ ...prev, [discovery.id]: `HTTP ${res.status}` }));
+      }
+    } catch (e: any) {
+      setScrapeErrors((prev) => ({ ...prev, [discovery.id]: e.message }));
+    } finally {
+      setScrapingIds((prev) => { const s = new Set(prev); s.delete(discovery.id); return s; });
+    }
+  };
+
+  // ── Linking search results ─────────────────────────────────────────────────
+
+  const linkResults = useMemo<IntelStore[]>(() => {
+    if (!linkQuery.trim() || allIntelStores.length === 0) return [];
+    const q = linkQuery.toLowerCase().trim();
+    return allIntelStores
+      .filter((s) => `${s.name} ${s.city ?? ""} ${s.address ?? ""}`.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [linkQuery, allIntelStores]);
+
+  // ── Derived counts ─────────────────────────────────────────────────────────
+
+  const unmatchedCount = unmatched.length;
   const isScrapeAllRunning = scrapeAll?.running === true;
   const anyPlatformRunning = Object.values(runStatuses).some((s) => s.state === "running");
+
+  const filteredUnmatched = unmatchedPlatformFilter
+    ? unmatched.filter((u) => u.platform === unmatchedPlatformFilter)
+    : unmatched;
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6 animate-fade-up">
@@ -560,152 +600,343 @@ export function ScraperAdmin() {
             {TOTAL_STORES} LCB-licensed WA stores · Scrape any platform to discover and link menu data
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <button onClick={loadStats} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-accent text-muted-foreground transition-colors shrink-0">
+          <RefreshCw className="w-3.5 h-3.5" />Refresh
+        </button>
+      </div>
+
+      {/* Tab switcher */}
+      <div className="flex items-center gap-1 border-b border-border">
+        {(["platforms", "unmatched"] as AdminView[]).map((v) => (
           <button
-            onClick={loadStats}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-accent text-muted-foreground transition-colors"
+            key={v}
+            onClick={() => setActiveView(v)}
+            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${activeView === v ? "bg-card border border-b-card border-border text-foreground -mb-px" : "text-muted-foreground hover:text-foreground"}`}
           >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Refresh
+            {v === "platforms" ? "Platforms" : (
+              <span className="flex items-center gap-1.5">
+                Unmatched
+                {unmatchedCount > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold">
+                    {unmatchedCount}
+                  </span>
+                )}
+              </span>
+            )}
           </button>
-        </div>
-      </div>
-
-      {/* Scrape All Platforms */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold text-foreground">Scrape All Platforms</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
-              Runs Dutchie → POSaBit → Leafly → Weedmaps sequentially using the batch pattern
-            </p>
-          </div>
-          {isScrapeAllRunning ? (
-            <button
-              onClick={handleStopAll}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors shrink-0"
-            >
-              <Square className="w-3.5 h-3.5" />
-              Stop All
-            </button>
-          ) : (
-            <button
-              onClick={handleScrapeAll}
-              disabled={anyPlatformRunning}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-            >
-              <Layers className="w-3.5 h-3.5" />
-              Scrape All Platforms
-            </button>
-          )}
-        </div>
-
-        {/* Scrape All progress */}
-        {scrapeAll && (
-          <div className="space-y-2">
-            {isScrapeAllRunning && (
-              <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-primary animate-pulse transition-all"
-                  style={{
-                    width: `${Math.round(((scrapeAll.platformIdx) / SCRAPE_ALL_PLATFORMS.length) * 100)}%`,
-                    minWidth: "8%",
-                  }}
-                />
-              </div>
-            )}
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-[11px] text-muted-foreground font-mono truncate">
-                {scrapeAll.done
-                  ? scrapeAll.error
-                    ? `⚠ ${scrapeAll.error}`
-                    : `✓ Complete`
-                  : scrapeAll.progressText}
-              </p>
-              {(scrapeAll.totalScraped > 0 || scrapeAll.totalProducts > 0) && (
-                <p className="text-[11px] text-muted-foreground shrink-0">
-                  <span className="text-foreground font-semibold">{scrapeAll.totalScraped}</span> stores ·{" "}
-                  <span className="text-foreground font-semibold">{scrapeAll.totalProducts.toLocaleString()}</span> products
-                </p>
-              )}
-            </div>
-            {/* Platform progress indicators */}
-            {SCRAPE_ALL_PLATFORMS.length > 0 && (
-              <div className="flex items-center gap-2">
-                {SCRAPE_ALL_PLATFORMS.map((p, i) => {
-                  const isDone = scrapeAll.done || i < scrapeAll.platformIdx;
-                  const isCurrent = !scrapeAll.done && i === scrapeAll.platformIdx && scrapeAll.running;
-                  return (
-                    <div key={p.id} className="flex items-center gap-1.5">
-                      <div
-                        className={`w-2 h-2 rounded-full transition-all ${
-                          isDone ? "opacity-100" : isCurrent ? "animate-pulse opacity-100" : "opacity-30"
-                        }`}
-                        style={{ background: p.color }}
-                      />
-                      <span className={`text-[10px] ${isCurrent ? "text-foreground font-medium" : isDone ? "text-muted-foreground" : "text-muted-foreground/50"}`}>
-                        {p.label}
-                      </span>
-                      {i < SCRAPE_ALL_PLATFORMS.length - 1 && (
-                        <span className="text-muted-foreground/30 text-[10px]">→</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* How it works */}
-      <div
-        className="rounded-lg px-4 py-3 text-[11px] text-muted-foreground leading-relaxed"
-        style={{ background: "rgba(0,212,170,0.05)", border: "1px solid rgba(0,212,170,0.15)" }}
-      >
-        <span className="font-semibold text-foreground">How scraping works: </span>
-        Phase 1 discovers all WA stores on that platform and matches them to LCB records.
-        Phase 2 fetches menus in batches to stay within the 60s Edge Function timeout.
-        Dutchie also saves website URLs to intel_stores, which POSaBit uses to find widget configs.
-        If a store has fresh data (&lt;6h old) from any platform, the menu fetch is skipped but the platform slug is always saved.
-      </div>
-
-      {/* Platform grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {PLATFORMS.map((platform) => (
-          <PlatformCard
-            key={platform.id}
-            platform={platform}
-            stats={stats[platform.id] ?? null}
-            runStatus={runStatuses[platform.id]}
-            logEntries={platformLogs[platform.id] ?? []}
-            onScrape={() => handleScrape(platform)}
-            onStop={() => handleStop(platform.id)}
-          />
         ))}
       </div>
 
-      {/* Summary row */}
-      <div className="rounded-lg border border-border bg-card p-4 grid grid-cols-3 gap-4 text-center">
-        <div>
-          <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-            {Object.values(stats).reduce((s, p) => s + p.storesLinked, 0)}
-          </p>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Stores with menu data</p>
+      {/* ── PLATFORMS VIEW ── */}
+      {activeView === "platforms" && (
+        <>
+          {/* Scrape All */}
+          <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Scrape All Platforms</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Runs Dutchie → POSaBit → Leafly → Weedmaps sequentially</p>
+              </div>
+              {isScrapeAllRunning ? (
+                <button onClick={handleStopAll} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors shrink-0">
+                  <Square className="w-3.5 h-3.5" />Stop All
+                </button>
+              ) : (
+                <button onClick={handleScrapeAll} disabled={anyPlatformRunning} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0">
+                  <Layers className="w-3.5 h-3.5" />Scrape All Platforms
+                </button>
+              )}
+            </div>
+            {scrapeAll && (
+              <div className="space-y-2">
+                {isScrapeAllRunning && (
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-primary animate-pulse transition-all" style={{ width: `${Math.round((scrapeAll.platformIdx / SCRAPE_ALL_PLATFORMS.length) * 100)}%`, minWidth: "8%" }} />
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-[11px] text-muted-foreground font-mono truncate">
+                    {scrapeAll.done ? (scrapeAll.error ? `⚠ ${scrapeAll.error}` : "✓ Complete") : scrapeAll.progressText}
+                  </p>
+                  {(scrapeAll.totalScraped > 0 || scrapeAll.totalProducts > 0) && (
+                    <p className="text-[11px] text-muted-foreground shrink-0">
+                      <span className="text-foreground font-semibold">{scrapeAll.totalScraped}</span> stores ·{" "}
+                      <span className="text-foreground font-semibold">{scrapeAll.totalProducts.toLocaleString()}</span> products
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {SCRAPE_ALL_PLATFORMS.map((p, i) => {
+                    const isDone = scrapeAll.done || i < scrapeAll.platformIdx;
+                    const isCurrent = !scrapeAll.done && i === scrapeAll.platformIdx && scrapeAll.running;
+                    return (
+                      <div key={p.id} className="flex items-center gap-1.5">
+                        <div className={`w-2 h-2 rounded-full transition-all ${isDone ? "opacity-100" : isCurrent ? "animate-pulse opacity-100" : "opacity-30"}`} style={{ background: p.color }} />
+                        <span className={`text-[10px] ${isCurrent ? "text-foreground font-medium" : isDone ? "text-muted-foreground" : "text-muted-foreground/50"}`}>{p.label}</span>
+                        {i < SCRAPE_ALL_PLATFORMS.length - 1 && <span className="text-muted-foreground/30 text-[10px]">→</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* How it works */}
+          <div className="rounded-lg px-4 py-3 text-[11px] text-muted-foreground leading-relaxed" style={{ background: "rgba(0,212,170,0.05)", border: "1px solid rgba(0,212,170,0.15)" }}>
+            <span className="font-semibold text-foreground">How scraping works: </span>
+            Phase 1 discovers all WA stores on that platform and matches them to LCB records. Unmatched stores are saved to the Unmatched tab for manual linking.
+            Phase 2 fetches menus in batches. If a store has fresh data (&lt;6h), the menu fetch is skipped but the platform slug is always saved.
+          </div>
+
+          {/* Platform grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {PLATFORMS.map((platform) => (
+              <PlatformCard key={platform.id} platform={platform} stats={stats[platform.id] ?? null}
+                runStatus={runStatuses[platform.id]} logEntries={platformLogs[platform.id] ?? []}
+                onScrape={() => handleScrape(platform)} onStop={() => handleStop(platform.id)} />
+            ))}
+          </div>
+
+          {/* Summary */}
+          <div className="rounded-lg border border-border bg-card p-4 grid grid-cols-3 gap-4 text-center">
+            <div>
+              <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                {Object.values(stats).reduce((s, p) => s + p.storesLinked, 0)}
+              </p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Stores with menu data</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{TOTAL_STORES}</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Total LCB stores</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                {Object.values(stats).reduce((s, p) => s + p.productsScraped, 0).toLocaleString()}
+              </p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Total products scraped</p>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── UNMATCHED VIEW ── */}
+      {activeView === "unmatched" && (
+        <div className="space-y-4">
+          {/* Controls */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <select
+              value={unmatchedPlatformFilter}
+              onChange={(e) => setUnmatchedPlatformFilter(e.target.value)}
+              className="px-2.5 py-1.5 rounded-md border border-border bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">All Platforms</option>
+              {Object.entries(PLATFORM_INFO).map(([key, pi]) => (
+                <option key={key} value={key}>{pi.label}</option>
+              ))}
+            </select>
+            <button onClick={loadUnmatched} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-accent text-muted-foreground transition-colors">
+              <RefreshCw className="w-3.5 h-3.5" />Refresh
+            </button>
+            <p className="text-sm text-muted-foreground ml-auto">
+              {unmatchedLoading ? "Loading…" : `${filteredUnmatched.length} unmatched store${filteredUnmatched.length !== 1 ? "s" : ""}`}
+            </p>
+          </div>
+
+          {/* Table */}
+          <div className="rounded-lg border border-border bg-card overflow-hidden shadow-premium">
+            {unmatchedLoading ? (
+              <div className="space-y-px">{[...Array(8)].map((_, i) => <div key={i} className="h-10 skeleton-shimmer" />)}</div>
+            ) : filteredUnmatched.length === 0 ? (
+              <div className="py-12 text-center text-sm text-muted-foreground">
+                {unmatched.length === 0
+                  ? "No unmatched stores — run a discover phase first"
+                  : "No unmatched stores for this platform"}
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--glass-border)" }} className="bg-sidebar">
+                    <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest w-8">Plt</th>
+                    <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Store Name</th>
+                    <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest hidden md:table-cell">City</th>
+                    <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest hidden lg:table-cell">Address</th>
+                    <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest hidden lg:table-cell">Slug</th>
+                    <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest w-48">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {filteredUnmatched.map((u) => {
+                    const pi = PLATFORM_INFO[u.platform];
+                    const isLinking = linkingId === u.id;
+                    const linked = linkedRows[u.id];
+                    const isScrapingThis = scrapingIds.has(u.id);
+                    const wasScraped = scrapedIds.has(u.id);
+                    const scrapeErr = scrapeErrors[u.id];
+
+                    return (
+                      <>
+                        <tr
+                          key={u.id}
+                          className={`transition-colors duration-100 ${isLinking ? "bg-accent/20" : linked ? "bg-emerald-500/5" : "hover:bg-accent/30"}`}
+                        >
+                          {/* Platform badge */}
+                          <td className="px-4 py-2.5">
+                            {pi ? (
+                              <span
+                                className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold"
+                                style={{ background: pi.color + "22", color: pi.color, border: `1px solid ${pi.color}66` }}
+                                title={pi.label}
+                              >
+                                {pi.letter}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground">{u.platform}</span>
+                            )}
+                          </td>
+
+                          {/* Store name */}
+                          <td className="px-4 py-2.5 font-medium text-foreground max-w-[180px] truncate">
+                            {u.store_name ?? "—"}
+                          </td>
+
+                          {/* City */}
+                          <td className="px-4 py-2.5 text-muted-foreground capitalize hidden md:table-cell">
+                            {(u.city ?? "").toLowerCase() || "—"}
+                          </td>
+
+                          {/* Address */}
+                          <td className="px-4 py-2.5 text-muted-foreground text-xs max-w-[160px] truncate hidden lg:table-cell">
+                            {u.address ?? "—"}
+                          </td>
+
+                          {/* Slug */}
+                          <td className="px-4 py-2.5 hidden lg:table-cell">
+                            <span className="text-[10px] font-mono text-muted-foreground">{u.platform_slug ?? "—"}</span>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-4 py-2.5">
+                            {linked ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] text-emerald-500 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  {linked.name.length > 14 ? linked.name.slice(0, 14) + "…" : linked.name}
+                                </span>
+                                {wasScraped ? (
+                                  <span className="text-[10px] text-emerald-500">✓ scraped</span>
+                                ) : scrapeErr ? (
+                                  <span className="text-[10px] text-destructive" title={scrapeErr}>⚠ failed</span>
+                                ) : (
+                                  <button
+                                    onClick={() => handleScrapeLinked(u)}
+                                    disabled={isScrapingThis}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-primary-foreground transition-colors disabled:opacity-50"
+                                    style={{ background: pi?.color ?? "#666" }}
+                                  >
+                                    {isScrapingThis ? (
+                                      <><RefreshCw className="w-2.5 h-2.5 animate-spin" />Scraping…</>
+                                    ) : (
+                                      <><Zap className="w-2.5 h-2.5" />Scrape Now</>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            ) : isLinking ? (
+                              <button onClick={handleCancelLink} className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1">
+                                <X className="w-3 h-3" />Cancel
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleStartLink(u.id)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border border-border hover:bg-accent transition-colors text-muted-foreground"
+                              >
+                                <Link2 className="w-3 h-3" />Link
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+
+                        {/* Inline linking panel */}
+                        {isLinking && (
+                          <tr key={`${u.id}-link`} className="bg-accent/10">
+                            <td colSpan={6} className="px-4 pb-3 pt-2">
+                              <div className="space-y-2">
+                                <p className="text-[11px] text-muted-foreground">
+                                  Link <span className="font-semibold text-foreground">{u.store_name}</span>
+                                  {u.city ? ` (${u.city})` : ""} to an intel store:
+                                </p>
+                                {/* Search input */}
+                                <div className="relative max-w-sm">
+                                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                                  <input
+                                    autoFocus
+                                    value={linkQuery}
+                                    onChange={(e) => { setLinkQuery(e.target.value); setLinkSelected(null); }}
+                                    placeholder="Search store name, city, address…"
+                                    className="w-full pl-7 pr-3 py-1.5 rounded-md border border-border bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                  />
+                                </div>
+                                {/* Results */}
+                                {linkResults.length > 0 && (
+                                  <div className="rounded-md border border-border bg-card shadow-sm overflow-hidden max-w-sm">
+                                    {linkResults.map((s) => (
+                                      <button
+                                        key={s.id}
+                                        onClick={() => setLinkSelected(s)}
+                                        className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-accent/50 ${linkSelected?.id === s.id ? "bg-primary/10 border-l-2 border-primary" : ""}`}
+                                      >
+                                        <span className="font-medium text-foreground">{s.name}</span>
+                                        <span className="text-muted-foreground text-[11px] ml-2 capitalize">{(s.city ?? "").toLowerCase()}</span>
+                                        {s.address && <span className="text-muted-foreground text-[11px] ml-1">· {s.address}</span>}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                {linkQuery && linkResults.length === 0 && (
+                                  <p className="text-[11px] text-muted-foreground">No matching stores found</p>
+                                )}
+                                {/* Confirm */}
+                                {linkSelected && (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[11px] text-muted-foreground">
+                                      Link to <span className="font-semibold text-foreground">{linkSelected.name}</span>
+                                      {linkSelected.city ? ` · ${linkSelected.city}` : ""}
+                                    </span>
+                                    <button
+                                      onClick={() => handleConfirmLink(u, linkSelected)}
+                                      disabled={linkSaving}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium text-primary-foreground bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50"
+                                    >
+                                      {linkSaving ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
+                                      Confirm Link
+                                    </button>
+                                    <button onClick={handleCancelLink} className="text-[11px] text-muted-foreground hover:text-foreground">
+                                      Cancel
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Recently linked this session */}
+          {Object.keys(linkedRows).length > 0 && (
+            <div className="text-[11px] text-muted-foreground">
+              {Object.keys(linkedRows).length} store{Object.keys(linkedRows).length !== 1 ? "s" : ""} linked this session
+              {Object.values(scrapedIds).length > 0 && ` · ${scrapedIds.size} scraped`}
+            </div>
+          )}
         </div>
-        <div>
-          <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-            {TOTAL_STORES}
-          </p>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Total LCB stores</p>
-        </div>
-        <div>
-          <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-            {Object.values(stats).reduce((s, p) => s + p.productsScraped, 0).toLocaleString()}
-          </p>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Total products scraped</p>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
