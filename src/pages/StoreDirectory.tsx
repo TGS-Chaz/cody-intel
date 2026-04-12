@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import type { IntelStore } from "@/lib/types";
-import { Search, ChevronRight, Wifi, WifiOff, ArrowUpDown } from "lucide-react";
+import { Search, ChevronRight, WifiOff, ArrowUpDown } from "lucide-react";
 
 const PLATFORMS = ["dutchie-api", "leafly", "weedmaps", "posabit-api", "jane"];
 const PLATFORM_LABELS: Record<string, string> = {
@@ -12,6 +12,14 @@ const PLATFORM_LABELS: Record<string, string> = {
   "posabit-api": "POSaBit",
   jane: "Jane",
 };
+
+// Badges: solid = has menu data, dashed outline = detected via slug only
+const PLATFORM_BADGES = [
+  { letter: "D", color: "#00D4AA", source: "dutchie-api",  slugField: "dutchie_slug"      as keyof IntelStore },
+  { letter: "L", color: "#3BB143", source: "leafly",        slugField: "leafly_slug"        as keyof IntelStore },
+  { letter: "P", color: "#5C6BC0", source: "posabit-api",   slugField: "posabit_feed_key"   as keyof IntelStore },
+  { letter: "W", color: "#F7931A", source: "weedmaps",      slugField: "weedmaps_slug"      as keyof IntelStore },
+];
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   active:  { label: "Active",  cls: "text-emerald-500 bg-emerald-500/10" },
@@ -201,7 +209,6 @@ export function StoreDirectory() {
                 </tr>
               ) : (
                 filtered.map((store) => {
-                  const platforms = menuMap[store.id] ?? [];
                   const badge = STATUS_BADGE[store.status ?? "unknown"] ?? STATUS_BADGE.unknown;
                   return (
                     <tr
@@ -229,22 +236,35 @@ export function StoreDirectory() {
                           : "—"}
                       </td>
                       <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-1 flex-wrap">
-                          {platforms.length === 0 ? (
-                            <span className="flex items-center gap-1 text-[10px] text-muted-foreground/50">
-                              <WifiOff className="w-3 h-3" /> None
-                            </span>
-                          ) : (
-                            platforms.map((p) => (
-                              <span
-                                key={p}
-                                className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-sm font-medium"
-                                style={{ background: "hsl(168 100% 42% / 0.1)", color: "hsl(168 100% 36%)" }}
-                              >
-                                <Wifi className="w-2.5 h-2.5" /> {PLATFORM_LABELS[p] ?? p}
-                              </span>
-                            ))
-                          )}
+                        <div className="flex items-center gap-1">
+                          {(() => {
+                            const visible = PLATFORM_BADGES.filter(
+                              (cfg) => !!(menuMap[store.id] ?? []).includes(cfg.source) || !!store[cfg.slugField]
+                            );
+                            if (visible.length === 0) {
+                              return (
+                                <span className="flex items-center gap-1 text-[10px] text-muted-foreground/50">
+                                  <WifiOff className="w-3 h-3" /> None
+                                </span>
+                              );
+                            }
+                            return visible.map((cfg) => {
+                              const hasMenu = (menuMap[store.id] ?? []).includes(cfg.source);
+                              return (
+                                <span
+                                  key={cfg.source}
+                                  title={PLATFORM_LABELS[cfg.source]}
+                                  className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold select-none"
+                                  style={hasMenu
+                                    ? { background: cfg.color + "22", color: cfg.color, border: `1px solid ${cfg.color}66` }
+                                    : { background: "transparent", color: cfg.color + "88", border: `1px dashed ${cfg.color}44` }
+                                  }
+                                >
+                                  {cfg.letter}
+                                </span>
+                              );
+                            });
+                          })()}
                         </div>
                       </td>
                       <td className="px-4 py-2.5 text-muted-foreground">

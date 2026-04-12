@@ -96,6 +96,53 @@ interface ScrapeAllState {
   error?: string;
 }
 
+type LogEntryStatus = "saved" | "skipped" | "failed" | "empty" | "no-widget";
+
+interface LogEntry {
+  storeName: string;
+  city?: string | null;
+  status: LogEntryStatus;
+  products?: number;
+  reason?: string;
+  existingSource?: string;
+  timestamp: number;
+}
+
+// ─── Scrape log component ─────────────────────────────────────────────────────
+
+function ScrapeLog({ entries }: { entries: LogEntry[] }) {
+  if (entries.length === 0) return null;
+
+  const icon = (s: LogEntryStatus) => {
+    if (s === "saved")     return "✅";
+    if (s === "skipped")   return "⏭️";
+    if (s === "empty")     return "⬜";
+    if (s === "no-widget") return "🔍";
+    return "❌";
+  };
+
+  // newest at top
+  const ordered = [...entries].reverse();
+
+  return (
+    <div className="mt-1 max-h-44 overflow-y-auto rounded-md bg-muted/20 border border-border/40 p-2 space-y-0.5 font-mono text-[10px]">
+      {ordered.map((e, i) => (
+        <div key={i} className="flex items-baseline gap-1.5 leading-relaxed">
+          <span className="shrink-0">{icon(e.status)}</span>
+          <span className="font-semibold text-foreground truncate">{e.storeName}</span>
+          {e.city && <span className="text-muted-foreground shrink-0">{e.city}</span>}
+          {e.status === "saved" && e.products != null && (
+            <span className="text-muted-foreground shrink-0">· {e.products} products</span>
+          )}
+          {e.reason && (
+            <span className="text-muted-foreground/70 italic truncate">· {e.reason}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Core scrape helper (shared by handleScrape + handleScrapeAll) ────────────
 
 async function runPlatformBatch(
@@ -106,6 +153,7 @@ async function runPlatformBatch(
   signal: AbortSignal,
   onProgress: (text: string) => void,
   onStatsRefresh: () => Promise<void>,
+  onBatchDone: (entries: LogEntry[]) => void,
 ): Promise<{ totalScraped: number; totalProducts: number }> {
   const fnUrl = `${supabaseUrl}/functions/v1/${platform.functionName}`;
   const headers = {
@@ -155,6 +203,29 @@ async function runPlatformBatch(
       const batchData = await batchRes.json();
       totalScraped += batchData.scraped ?? 0;
       totalProducts += batchData.products_saved ?? 0;
+
+      // Parse batch results into log entries
+      const entries: LogEntry[] = (batchData.results ?? []).map((r: any): LogEntry => {
+        let status: LogEntryStatus = "saved";
+        const s = r.status ?? "";
+        if (s === "skipped") status = "skipped";
+        else if (s === "empty-menu") status = "empty";
+        else if (s === "no-widget") status = "no-widget";
+        else if (s === "success") status = "saved";
+        else status = "failed"; // error, vps-*, mcx-failed
+
+        return {
+          storeName: r.store ?? "Unknown",
+          city: r.city ?? null,
+          status,
+          products: r.products ?? undefined,
+          reason: r.reason ?? undefined,
+          existingSource: r.existingSource ?? undefined,
+          timestamp: Date.now(),
+        };
+      });
+
+      if (entries.length > 0) onBatchDone(entries);
     }
 
     await onStatsRefresh();
@@ -169,12 +240,14 @@ function PlatformCard({
   platform,
   stats,
   runStatus,
+  logEntries,
   onScrape,
   onStop,
 }: {
   platform: Platform;
   stats: PlatformStats | null;
   runStatus: RunStatus;
+  logEntries: LogEntry[];
   onScrape: () => void;
   onStop: () => void;
 }) {
@@ -252,6 +325,9 @@ function PlatformCard({
         </p>
       )}
 
+      {/* Scrape results log */}
+      {logEntries.length > 0 && <ScrapeLog entries={logEntries} />}
+
       <div className="mt-auto flex gap-2">
         {platform.blocked ? (
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 italic">
@@ -282,6 +358,9 @@ export function ScraperAdmin() {
     Object.fromEntries(PLATFORMS.map((p) => [p.id, { state: "idle", message: "" }]))
   );
   const [scrapeAll, setScrapeAll] = useState<ScrapeAllState | null>(null);
+  const [platformLogs, setPlatformLogs] = useState<Record<string, LogEntry[]>>(
+    Object.fromEntries(PLATFORMS.map((p) => [p.id, []]))
+  );
 
   const abortRefs = useRef<Record<string, AbortController>>({});
   const scrapeAllAbortRef = useRef<AbortController | null>(null);
@@ -321,6 +400,14 @@ export function ScraperAdmin() {
     setRunStatuses((prev) => ({ ...prev, [id]: { ...prev[id], ...update } }));
   };
 
+  const clearLog = (id: string) => {
+    setPlatformLogs((prev) => ({ ...prev, [id]: [] }));
+  };
+
+  const appendLog = (id: string, entries: LogEntry[]) => {
+    setPlatformLogs((prev) => ({ ...prev, [id]: [...(prev[id] ?? []), ...entries] }));
+  };
+
   // ── Get session + env (shared) ────────────────────────────────────────────
 
   const getCallParams = async () => {
@@ -338,6 +425,7 @@ export function ScraperAdmin() {
   const handleScrape = async (platform: Platform) => {
     const ctrl = new AbortController();
     abortRefs.current[platform.id] = ctrl;
+    clearLog(platform.id);
     setStatus(platform.id, { state: "running", message: "", progressText: "Starting..." });
     startPolling(platform.id);
 
@@ -347,6 +435,7 @@ export function ScraperAdmin() {
         platform, session, supabaseUrl, anonKey, ctrl.signal,
         (text) => setStatus(platform.id, { progressText: text }),
         loadStats,
+        (entries) => appendLog(platform.id, entries),
       );
       setStatus(platform.id, {
         state: "done",
@@ -396,6 +485,7 @@ export function ScraperAdmin() {
         const platform = SCRAPE_ALL_PLATFORMS[i];
 
         setScrapeAll((prev) => prev ? { ...prev, platformIdx: i, progressText: `${platform.label}: discovering...` } : prev);
+        clearLog(platform.id);
         setStatus(platform.id, { state: "running", message: "", progressText: "Starting via Scrape All..." });
         startPolling(platform.id);
 
@@ -410,6 +500,7 @@ export function ScraperAdmin() {
               } : prev);
             },
             loadStats,
+            (entries) => appendLog(platform.id, entries),
           );
 
           grandScraped += totalScraped;
@@ -576,6 +667,7 @@ export function ScraperAdmin() {
         Phase 1 discovers all WA stores on that platform and matches them to LCB records.
         Phase 2 fetches menus in batches to stay within the 60s Edge Function timeout.
         Dutchie also saves website URLs to intel_stores, which POSaBit uses to find widget configs.
+        If a store has fresh data (&lt;6h old) from any platform, the menu fetch is skipped but the platform slug is always saved.
       </div>
 
       {/* Platform grid */}
@@ -586,6 +678,7 @@ export function ScraperAdmin() {
             platform={platform}
             stats={stats[platform.id] ?? null}
             runStatus={runStatuses[platform.id]}
+            logEntries={platformLogs[platform.id] ?? []}
             onScrape={() => handleScrape(platform)}
             onStop={() => handleStop(platform.id)}
           />
