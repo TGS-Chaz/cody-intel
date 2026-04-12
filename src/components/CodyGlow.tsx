@@ -1,6 +1,7 @@
 import { type ReactNode, useId } from "react";
 
 interface CodyGlowProps {
+  active?: boolean; // always renders in Intel — prop accepted for API compatibility
   intensity?: "subtle" | "medium" | "bright";
   size?: "sm" | "md" | "lg";
   children: ReactNode;
@@ -18,6 +19,7 @@ const SIZE_CFG = {
 const GRADIENT = "linear-gradient(90deg, #00D4AA, #A855F7, #7C3AED, #00D4AA)";
 
 export default function CodyGlow({ intensity = "medium", size = "md", children }: CodyGlowProps) {
+  // `active` prop accepted but ignored — glow is always active in the Intel app
   const uid = useId().replace(/:/g, "");
 
   const { outerInset, innerInset, outerBlur, innerBlur } = SIZE_CFG[size];

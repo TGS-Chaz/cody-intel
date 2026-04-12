@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { ProfileProvider } from "@/lib/profile";
 import { OrgProvider } from "@/lib/org";
+import IntelThemeProvider from "@/components/intel/IntelThemeProvider";
 import AppLayout from "@/components/AppLayout";
 import LoginPage from "@/pages/LoginPage";
 import { Dashboard } from "@/pages/Dashboard";
@@ -28,6 +29,7 @@ function ProtectedRoutes() {
   return (
     <ProfileProvider>
       <OrgProvider>
+      <IntelThemeProvider>
       <ThemeProvider>
         <Routes>
           <Route element={<AppLayout />}>
@@ -40,6 +42,7 @@ function ProtectedRoutes() {
           </Route>
         </Routes>
       </ThemeProvider>
+      </IntelThemeProvider>
       </OrgProvider>
     </ProfileProvider>
   );
