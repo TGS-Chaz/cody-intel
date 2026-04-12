@@ -11,7 +11,7 @@ interface Platform {
   color: string;
   description: string;
   functionName: string;    // Supabase Edge Function to invoke
-  actionBody?: Record<string, unknown>;
+  batchSize: number;       // stores per scrape-batch call
   blocked?: string;        // if set, shows this message instead of Run button
 }
 
@@ -23,14 +23,16 @@ const PLATFORMS: Platform[] = [
     color: "#00D4AA",
     description: "Discovers WA stores via Dutchie GraphQL API, matches to LCB stores by address, fetches complete menus",
     functionName: "scrape-dutchie",
+    batchSize: 10,
   },
   {
     id: "leafly",
     label: "Leafly",
     source: "leafly",
     color: "#3BB143",
-    description: "Discovers WA dispensaries via Leafly city pages, matches to LCB stores, fetches complete menus",
+    description: "Discovers WA dispensaries via Leafly WA state page, matches to LCB stores, fetches complete menus",
     functionName: "scrape-leafly",
+    batchSize: 4,
   },
   {
     id: "posabit",
@@ -39,6 +41,7 @@ const PLATFORMS: Platform[] = [
     color: "#5C6BC0",
     description: "Scans intel_stores websites for POSaBit embeds, fetches menus via MCX API",
     functionName: "scrape-posabit",
+    batchSize: 2,
   },
   {
     id: "weedmaps",
@@ -47,6 +50,7 @@ const PLATFORMS: Platform[] = [
     color: "#F7931A",
     description: "Discovers WA dispensaries via Weedmaps directory, matches to LCB stores, fetches complete menus",
     functionName: "scrape-weedmaps",
+    batchSize: 5,
   },
   {
     id: "jane",
@@ -55,6 +59,7 @@ const PLATFORMS: Platform[] = [
     color: "#E91E63",
     description: "Jane Technologies menus — scraping blocked, requires proxy configuration",
     functionName: "scrape-jane",
+    batchSize: 5,
     blocked: "Blocked — requires proxy fix",
   },
 ];
@@ -262,10 +267,10 @@ export function ScraperAdmin() {
     loadStats();
   }, [loadStats]);
 
-  // Poll DB every 4s while a scrape is running
+  // Poll DB every 5s while a scrape is running
   const startPolling = (platformId: string) => {
     stopPolling(platformId);
-    pollRefs.current[platformId] = setInterval(loadStats, 4000);
+    pollRefs.current[platformId] = setInterval(loadStats, 5000);
   };
 
   const stopPolling = (platformId: string) => {
@@ -279,11 +284,13 @@ export function ScraperAdmin() {
     setRunStatuses((prev) => ({ ...prev, [id]: { ...prev[id], ...update } }));
   };
 
+  // ── Two-phase scraping: discover → batch loop ─────────────────────────────
+
   const handleScrape = async (platform: Platform) => {
     const ctrl = new AbortController();
     abortRefs.current[platform.id] = ctrl;
 
-    setStatus(platform.id, { state: "running", message: "", progressText: "Connecting..." });
+    setStatus(platform.id, { state: "running", message: "", progressText: "Discovering stores..." });
     startPolling(platform.id);
 
     try {
@@ -292,29 +299,71 @@ export function ScraperAdmin() {
 
       const url = import.meta.env.VITE_SUPABASE_URL as string;
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+      const fnUrl = `${url}/functions/v1/${platform.functionName}`;
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: anonKey,
+      };
 
-      setStatus(platform.id, {
-        progressText: `Discovering ${platform.label} stores in Washington...`,
-      });
-
-      const res = await fetch(`${url}/functions/v1/${platform.functionName}`, {
+      // ── Phase 1: discover ──────────────────────────────────────────────────
+      const discoverRes = await fetch(fnUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: anonKey,
-        },
-        body: JSON.stringify(platform.actionBody ?? {}),
+        headers,
+        body: JSON.stringify({ action: "discover" }),
         signal: ctrl.signal,
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const discoverData = await discoverRes.json();
+      if (!discoverRes.ok) throw new Error(discoverData.error ?? `Discover HTTP ${discoverRes.status}`);
 
-      // Build a readable summary from the response
-      const summary = buildSummary(data);
-      setStatus(platform.id, { state: "done", message: summary, progressText: undefined });
-      await loadStats();
+      const candidates: any[] = discoverData.candidates ?? [];
+      if (candidates.length === 0) {
+        setStatus(platform.id, { state: "done", message: "No matching stores found", progressText: undefined });
+        return;
+      }
+
+      const totalBatches = Math.ceil(candidates.length / platform.batchSize);
+      setStatus(platform.id, {
+        progressText: `Found ${candidates.length} stores — scraping batch 1/${totalBatches}...`,
+      });
+
+      // ── Phase 2: batch loop ────────────────────────────────────────────────
+      let totalScraped = 0;
+      let totalProducts = 0;
+
+      for (let b = 0; b < totalBatches; b++) {
+        if (ctrl.signal.aborted) break;
+
+        const batch = candidates.slice(b * platform.batchSize, (b + 1) * platform.batchSize);
+
+        setStatus(platform.id, {
+          progressText: `Batch ${b + 1}/${totalBatches} · ${totalScraped} stores scraped · ${totalProducts.toLocaleString()} products`,
+        });
+
+        const batchRes = await fetch(fnUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ action: "scrape-batch", stores: batch }),
+          signal: ctrl.signal,
+        });
+
+        if (batchRes.ok) {
+          const batchData = await batchRes.json();
+          totalScraped += batchData.scraped ?? 0;
+          totalProducts += batchData.products_saved ?? 0;
+        }
+
+        // Refresh DB stats after each batch
+        await loadStats();
+      }
+
+      setStatus(platform.id, {
+        state: "done",
+        message: `${totalScraped} stores scraped · ${totalProducts.toLocaleString()} products saved`,
+        progressText: undefined,
+      });
+
     } catch (err: any) {
       if (err.name === "AbortError") {
         setStatus(platform.id, { state: "idle", message: "", progressText: undefined });
@@ -363,9 +412,9 @@ export function ScraperAdmin() {
         style={{ background: "rgba(0,212,170,0.05)", border: "1px solid rgba(0,212,170,0.15)" }}
       >
         <span className="font-semibold text-foreground">How scraping works: </span>
-        Each "Scrape All" discovers all WA stores on that platform, matches them to the 458 LCB-licensed stores by
-        address → name+city, then fetches complete menus. Only complete menus are saved. Stores that don't match
-        an LCB record are skipped — no new stores are created.
+        Phase 1 discovers all WA stores on that platform and matches them to LCB records.
+        Phase 2 fetches menus in batches to avoid the 60s Edge Function timeout.
+        Only complete menus are saved. Stores that don't match an LCB record are skipped.
       </div>
 
       {/* Platform grid */}
@@ -420,20 +469,4 @@ export function ScraperAdmin() {
       </div>
     </div>
   );
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function buildSummary(data: any): string {
-  if (!data) return "Completed";
-  // Common response shapes
-  if (data.stores_found !== undefined && data.menus_saved !== undefined) {
-    return `Found ${data.stores_found} stores · ${data.menus_saved} menus saved · ${data.products_saved ?? 0} products`;
-  }
-  if (data.matched !== undefined) {
-    return `${data.matched} stores matched · ${data.saved ?? 0} menus saved`;
-  }
-  if (data.message) return data.message;
-  // Fallback: first 120 chars of JSON
-  return JSON.stringify(data).slice(0, 120);
 }
