@@ -348,6 +348,10 @@ export function ScraperAdmin() {
   const [unmatchedPlatformFilter, setUnmatchedPlatformFilter] = useState("");
   const [allIntelStores, setAllIntelStores] = useState<IntelStore[]>([]);
 
+  // Exclusion sets for link search
+  const [storesWithMenuIds, setStoresWithMenuIds] = useState<Set<string>>(new Set());
+  const [storesAlreadyLinkedIds, setStoresAlreadyLinkedIds] = useState<Set<string>>(new Set());
+
   // Linking state
   const [linkingId, setLinkingId] = useState<string | null>(null);
   const [linkQuery, setLinkQuery] = useState("");
@@ -394,11 +398,23 @@ export function ScraperAdmin() {
     if (activeView === "unmatched") {
       loadUnmatched();
       if (allIntelStores.length === 0) {
-        supabase.from("intel_stores")
-          .select("id, name, city, address, crm_contact_id, dutchie_slug, leafly_slug, weedmaps_slug, posabit_feed_key")
-          .eq("status", "active")
-          .order("name")
-          .then(({ data }) => setAllIntelStores((data as IntelStore[]) ?? []));
+        Promise.all([
+          supabase.from("intel_stores")
+            .select("id, name, city, address, crm_contact_id, dutchie_slug, leafly_slug, weedmaps_slug, posabit_feed_key")
+            .eq("status", "active")
+            .order("name"),
+          supabase.from("dispensary_menus")
+            .select("intel_store_id")
+            .not("intel_store_id", "is", null),
+          supabase.from("intel_unmatched_discoveries")
+            .select("matched_intel_store_id")
+            .eq("matched", true)
+            .not("matched_intel_store_id", "is", null),
+        ]).then(([storesRes, menusRes, linkedRes]) => {
+          setAllIntelStores((storesRes.data as IntelStore[]) ?? []);
+          setStoresWithMenuIds(new Set((menusRes.data ?? []).map((r: any) => r.intel_store_id as string)));
+          setStoresAlreadyLinkedIds(new Set((linkedRes.data ?? []).map((r: any) => r.matched_intel_store_id as string)));
+        });
       }
     }
   }, [activeView]);
@@ -522,6 +538,7 @@ export function ScraperAdmin() {
 
       setLinkedRows((prev) => ({ ...prev, [discovery.id]: intel }));
       setUnmatched((prev) => prev.filter((u) => u.id !== discovery.id));
+      setStoresAlreadyLinkedIds((prev) => new Set([...prev, intel.id]));
       setLinkingId(null);
       setLinkQuery("");
       setLinkSelected(null);
@@ -572,10 +589,18 @@ export function ScraperAdmin() {
   const linkResults = useMemo<IntelStore[]>(() => {
     if (!linkQuery.trim() || allIntelStores.length === 0) return [];
     const q = linkQuery.toLowerCase().trim();
+    const currentDiscovery = linkingId ? unmatched.find((u) => u.id === linkingId) : null;
+    const platformSlugField = currentDiscovery ? PLATFORM_INFO[currentDiscovery.platform]?.slugField : null;
     return allIntelStores
-      .filter((s) => `${s.name} ${s.city ?? ""} ${s.address ?? ""}`.toLowerCase().includes(q))
+      .filter((s) => {
+        if (!`${s.name} ${s.city ?? ""} ${s.address ?? ""}`.toLowerCase().includes(q)) return false;
+        if (storesWithMenuIds.has(s.id)) return false;
+        if (storesAlreadyLinkedIds.has(s.id)) return false;
+        if (platformSlugField && s[platformSlugField as keyof IntelStore]) return false;
+        return true;
+      })
       .slice(0, 8);
-  }, [linkQuery, allIntelStores]);
+  }, [linkQuery, allIntelStores, linkingId, unmatched, storesWithMenuIds, storesAlreadyLinkedIds]);
 
   // ── Derived counts ─────────────────────────────────────────────────────────
 
