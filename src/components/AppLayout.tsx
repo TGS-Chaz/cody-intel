@@ -16,6 +16,7 @@ import {
   Sparkles,
   Bell,
   Globe,
+  Package,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -30,6 +31,7 @@ import NotificationsCenter from "@/components/NotificationsCenter";
 const navItems = [
   { to: "/",          icon: LayoutDashboard, label: "Dashboard",  end: true },
   { to: "/stores",    icon: Store,           label: "Stores" },
+  { to: "/my-products", icon: Package,       label: "My Products" },
   { to: "/scrapers",  icon: Radio,           label: "Scrapers" },
   { to: "/reports",   icon: BarChart2,       label: "Reports" },
   { to: "/trends",    icon: TrendingUp,      label: "Trends" },

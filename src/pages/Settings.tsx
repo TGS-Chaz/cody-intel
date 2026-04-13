@@ -3,36 +3,39 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useProfile } from "@/lib/profile";
 import { useTheme } from "@/lib/theme";
+import { useOrg } from "@/lib/org";
 import { Sun, Moon, Sunset, User, Tag, X, Plus, Search, Bell, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 
 // ── Brands Section ────────────────────────────────────────────────────────────
 
-interface BrandEntry { id: string; name: string; is_own_brand: boolean; is_competitor_brand: boolean; }
-interface SearchResult { id: string; name: string; }
+interface UserBrand { id: string; brand_name: string; is_own_brand: boolean; }
+interface MarketBrandSuggestion { id: string; name: string; }
 
 function BrandsSection() {
-  const [brands, setBrands]           = useState<BrandEntry[]>([]);
+  const { orgId } = useOrg();
+  const [brands, setBrands]           = useState<UserBrand[]>([]);
   const [loading, setLoading]         = useState(true);
-  const [ownQuery, setOwnQuery]       = useState("");
-  const [compQuery, setCompQuery]     = useState("");
-  const [ownResults, setOwnResults]   = useState<SearchResult[]>([]);
-  const [compResults, setCompResults] = useState<SearchResult[]>([]);
+  const [ownInput, setOwnInput]       = useState("");
+  const [compInput, setCompInput]     = useState("");
+  const [ownSuggestions, setOwnSuggestions]   = useState<MarketBrandSuggestion[]>([]);
+  const [compSuggestions, setCompSuggestions] = useState<MarketBrandSuggestion[]>([]);
   const [ownOpen, setOwnOpen]         = useState(false);
   const [compOpen, setCompOpen]       = useState(false);
   const ownRef  = useRef<HTMLDivElement>(null);
   const compRef = useRef<HTMLDivElement>(null);
 
   async function loadBrands() {
+    if (!orgId) return;
     const { data } = await supabase
-      .from("market_brands")
-      .select("id, name, is_own_brand, is_competitor_brand")
-      .order("name")
-      .limit(200);
+      .from("user_brands")
+      .select("id, brand_name, is_own_brand")
+      .eq("org_id", orgId)
+      .order("brand_name");
     setBrands(data ?? []);
     setLoading(false);
   }
 
-  useEffect(() => { loadBrands(); }, []);
+  useEffect(() => { loadBrands(); }, [orgId]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -44,7 +47,7 @@ function BrandsSection() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  async function searchBrands(q: string): Promise<SearchResult[]> {
+  async function fetchSuggestions(q: string): Promise<MarketBrandSuggestion[]> {
     if (!q.trim()) return [];
     const { data } = await supabase
       .from("market_brands")
@@ -54,46 +57,41 @@ function BrandsSection() {
     return data ?? [];
   }
 
-  async function handleOwnQuery(q: string) {
-    setOwnQuery(q);
-    if (q.length < 1) { setOwnResults([]); setOwnOpen(false); return; }
-    const results = await searchBrands(q);
-    setOwnResults(results.filter(r => !brands.find(b => b.id === r.id && b.is_own_brand)));
+  async function handleOwnInput(q: string) {
+    setOwnInput(q);
+    if (q.length < 1) { setOwnSuggestions([]); setOwnOpen(false); return; }
+    const results = await fetchSuggestions(q);
+    setOwnSuggestions(results);
     setOwnOpen(true);
   }
 
-  async function handleCompQuery(q: string) {
-    setCompQuery(q);
-    if (q.length < 1) { setCompResults([]); setCompOpen(false); return; }
-    const results = await searchBrands(q);
-    setCompResults(results.filter(r => !brands.find(b => b.id === r.id && b.is_competitor_brand)));
+  async function handleCompInput(q: string) {
+    setCompInput(q);
+    if (q.length < 1) { setCompSuggestions([]); setCompOpen(false); return; }
+    const results = await fetchSuggestions(q);
+    setCompSuggestions(results);
     setCompOpen(true);
   }
 
-  async function addOwn(id: string) {
-    await supabase.from("market_brands").update({ is_own_brand: true }).eq("id", id);
-    setOwnQuery(""); setOwnOpen(false);
+  async function addBrand(brandName: string, isOwn: boolean) {
+    if (!orgId || !brandName.trim()) return;
+    await supabase.from("user_brands").insert({
+      org_id: orgId,
+      brand_name: brandName.trim(),
+      is_own_brand: isOwn,
+    });
+    if (isOwn) { setOwnInput(""); setOwnOpen(false); }
+    else { setCompInput(""); setCompOpen(false); }
     await loadBrands();
   }
 
-  async function addComp(id: string) {
-    await supabase.from("market_brands").update({ is_competitor_brand: true }).eq("id", id);
-    setCompQuery(""); setCompOpen(false);
-    await loadBrands();
-  }
-
-  async function removeOwn(id: string) {
-    await supabase.from("market_brands").update({ is_own_brand: false }).eq("id", id);
-    await loadBrands();
-  }
-
-  async function removeComp(id: string) {
-    await supabase.from("market_brands").update({ is_competitor_brand: false }).eq("id", id);
+  async function removeBrand(id: string) {
+    await supabase.from("user_brands").delete().eq("id", id);
     await loadBrands();
   }
 
   const ownList  = brands.filter(b => b.is_own_brand);
-  const compList = brands.filter(b => b.is_competitor_brand);
+  const compList = brands.filter(b => !b.is_own_brand);
 
   return (
     <div className="rounded-lg border border-border bg-card p-5 shadow-premium space-y-4">
@@ -101,7 +99,7 @@ function BrandsSection() {
         <Tag className="w-4 h-4 text-primary" /> Brands
       </h2>
       <p className="text-xs text-muted-foreground">
-        Configure your own brands and competitor brands for Gap Analysis.
+        Brands you add here are used across all analytics, gap analysis, and AI features.
       </p>
 
       {loading ? (
@@ -110,15 +108,15 @@ function BrandsSection() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          {/* My Brands */}
+          {/* My Brands — teal accent */}
           <div className="space-y-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">My Brands</p>
             <div className="flex flex-wrap gap-2 min-h-[2rem]">
               {ownList.length === 0 && <p className="text-xs text-muted-foreground italic">None configured.</p>}
               {ownList.map(b => (
-                <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium border border-primary/20">
-                  {b.name}
-                  <button onClick={() => removeOwn(b.id)} className="ml-0.5 hover:text-red-400 transition-colors">
+                <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-teal-500/10 text-teal-500 text-xs font-medium border border-teal-500/20">
+                  {b.brand_name}
+                  <button onClick={() => removeBrand(b.id)} className="ml-0.5 hover:text-red-400 transition-colors">
                     <X className="w-3 h-3" />
                   </button>
                 </span>
@@ -127,20 +125,21 @@ function BrandsSection() {
             <div className="relative" ref={ownRef}>
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
-                value={ownQuery}
-                onChange={e => handleOwnQuery(e.target.value)}
-                placeholder="Search to add brand…"
-                className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                value={ownInput}
+                onChange={e => handleOwnInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && ownInput.trim()) addBrand(ownInput, true); }}
+                placeholder="Type brand name and press Enter…"
+                className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
               />
-              {ownOpen && ownResults.length > 0 && (
+              {ownOpen && ownSuggestions.length > 0 && (
                 <div className="absolute z-20 top-full mt-1 w-full rounded-md border border-border bg-card shadow-lg overflow-hidden">
-                  {ownResults.map(r => (
+                  {ownSuggestions.map(r => (
                     <button
                       key={r.id}
-                      onClick={() => addOwn(r.id)}
+                      onClick={() => addBrand(r.name, true)}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors text-left"
                     >
-                      <Plus className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <Plus className="w-3.5 h-3.5 text-teal-500 shrink-0" />
                       {r.name}
                     </button>
                   ))}
@@ -149,15 +148,15 @@ function BrandsSection() {
             </div>
           </div>
 
-          {/* Competitor Brands */}
+          {/* Competitor Brands — orange accent */}
           <div className="space-y-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Competitor Brands</p>
             <div className="flex flex-wrap gap-2 min-h-[2rem]">
               {compList.length === 0 && <p className="text-xs text-muted-foreground italic">None configured.</p>}
               {compList.map(b => (
-                <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-red-500/10 text-red-400 text-xs font-medium border border-red-500/20">
-                  {b.name}
-                  <button onClick={() => removeComp(b.id)} className="ml-0.5 hover:text-red-300 transition-colors">
+                <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-orange-500/10 text-orange-400 text-xs font-medium border border-orange-500/20">
+                  {b.brand_name}
+                  <button onClick={() => removeBrand(b.id)} className="ml-0.5 hover:text-red-300 transition-colors">
                     <X className="w-3 h-3" />
                   </button>
                 </span>
@@ -166,20 +165,21 @@ function BrandsSection() {
             <div className="relative" ref={compRef}>
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
-                value={compQuery}
-                onChange={e => handleCompQuery(e.target.value)}
-                placeholder="Search to add brand…"
-                className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                value={compInput}
+                onChange={e => handleCompInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && compInput.trim()) addBrand(compInput, false); }}
+                placeholder="Type brand name and press Enter…"
+                className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500"
               />
-              {compOpen && compResults.length > 0 && (
+              {compOpen && compSuggestions.length > 0 && (
                 <div className="absolute z-20 top-full mt-1 w-full rounded-md border border-border bg-card shadow-lg overflow-hidden">
-                  {compResults.map(r => (
+                  {compSuggestions.map(r => (
                     <button
                       key={r.id}
-                      onClick={() => addComp(r.id)}
+                      onClick={() => addBrand(r.name, false)}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors text-left"
                     >
-                      <Plus className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                      <Plus className="w-3.5 h-3.5 text-orange-400 shrink-0" />
                       {r.name}
                     </button>
                   ))}

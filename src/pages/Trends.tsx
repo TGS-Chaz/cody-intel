@@ -86,7 +86,8 @@ interface RankingRow {
   change: number;
 }
 
-function BrandRankingSection({ metrics }: { metrics: DailyBrandMetric[] }) {
+function BrandRankingSection({ metrics, ownBrands }: { metrics: DailyBrandMetric[]; ownBrands: string[] }) {
+  const ownSet = useMemo(() => new Set(ownBrands.map((b) => b.toLowerCase())), [ownBrands]);
   const rows = useMemo<RankingRow[]>(() => {
     const now = new Date();
     const cutoff = new Date(now);
@@ -154,7 +155,14 @@ function BrandRankingSection({ metrics }: { metrics: DailyBrandMetric[] }) {
           <tbody>
             {rows.map((row) => (
               <tr key={row.brand} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-2.5 text-[12px] font-medium text-foreground">{row.brand}</td>
+                <td className="px-4 py-2.5 text-[12px] font-medium text-foreground">
+                  {row.brand}
+                  {ownSet.has(row.brand.toLowerCase()) && (
+                    <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest bg-teal-500/15 text-teal-500 border border-teal-500/25">
+                      Yours
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-2.5 text-[12px] text-right tabular-nums">{row.thisWeek.toFixed(1)}</td>
                 <td className="px-4 py-2.5 text-[12px] text-right tabular-nums">{row.lastWeek.toFixed(1)}</td>
                 <td className={`px-4 py-2.5 text-[12px] text-right font-semibold tabular-nums ${row.change > 0 ? "text-emerald-500" : row.change < 0 ? "text-red-500" : "text-muted-foreground"}`}>
@@ -296,7 +304,7 @@ function OwnBrandSection({
               type="monotone"
               dataKey={brand}
               stroke={BRAND_COLORS[i % BRAND_COLORS.length]}
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={false}
               activeDot={{ r: 4 }}
             />
@@ -554,7 +562,7 @@ export function Trends() {
       fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
       const fourteenStr = fourteenDaysAgo.toISOString().slice(0, 10);
 
-      const [{ data: data30 }, { data: data14 }, { data: ownData }] = await Promise.all([
+      const [{ data: data30 }, { data: data14 }] = await Promise.all([
         supabase
           .from("daily_brand_metrics")
           .select("date, brand_name, store_count, total_products, avg_price, categories")
@@ -567,10 +575,6 @@ export function Trends() {
           .gte("date", fourteenStr)
           .order("date")
           .limit(10000),
-        supabase
-          .from("market_brands")
-          .select("brand_name")
-          .eq("is_own_brand", true),
       ]);
 
       const m30 = (data30 as DailyBrandMetric[] | null) ?? [];
@@ -578,7 +582,24 @@ export function Trends() {
 
       setMetrics30(m30);
       setMetrics14(m14);
-      setOwnBrands((ownData as OwnBrand[] | null)?.map((r) => r.brand_name) ?? []);
+
+      // Load own brands from user_brands (primary), fall back to market_brands
+      const { data: userOwnBrands } = await supabase
+        .from("user_brands")
+        .select("brand_name")
+        .eq("is_own_brand", true);
+
+      let ownBrandNames: string[] = (userOwnBrands ?? []).map((b: any) => b.brand_name);
+
+      if (!ownBrandNames.length) {
+        const { data: mktOwn } = await supabase
+          .from("market_brands")
+          .select("brand_name")
+          .eq("is_own_brand", true);
+        ownBrandNames = (mktOwn as OwnBrand[] | null)?.map((r) => r.brand_name) ?? [];
+      }
+
+      setOwnBrands(ownBrandNames);
 
       // Need at least 7 distinct dates to show comparisons
       const distinctDates = new Set(m14.map((r) => r.date));
@@ -613,7 +634,7 @@ export function Trends() {
         </div>
       ) : (
         <>
-          <BrandRankingSection metrics={metrics14} />
+          <BrandRankingSection metrics={metrics14} ownBrands={ownBrands} />
           <OwnBrandSection metrics={metrics30} ownBrands={ownBrands} />
           <PriceTrendsSection metrics={metrics30} />
           <DistributionSection metrics={metrics14} />

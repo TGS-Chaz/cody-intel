@@ -1213,12 +1213,12 @@ function BrandDistribution() {
 
 // ── Report 7: Gap Analysis ────────────────────────────────────────────────────
 
-interface MarketBrand { id: string; name: string; }
+interface GapBrand { id: string; name: string; }
 interface GapStore { id: string; name: string; city: string; crm_contact_id: string; }
 
 function GapAnalysis() {
-  const [ownBrands, setOwnBrands]           = useState<MarketBrand[]>([]);
-  const [competitorBrands, setCompetitorBrands] = useState<MarketBrand[]>([]);
+  const [ownBrands, setOwnBrands]           = useState<GapBrand[]>([]);
+  const [competitorBrands, setCompetitorBrands] = useState<GapBrand[]>([]);
   const [storeMap, setStoreMap]             = useState<Map<string, Set<string>>>(new Map());
   const [stores, setStores]                 = useState<GapStore[]>([]);
   const [loading, setLoading]               = useState(true);
@@ -1229,15 +1229,41 @@ function GapAnalysis() {
     async function load() {
       setLoading(true);
 
-      const [ownRes, compRes, storeRes] = await Promise.all([
-        supabase.from("market_brands").select("id, name").eq("is_own_brand", true),
-        supabase.from("market_brands").select("id, name").eq("is_competitor_brand", true),
-        supabase.from("intel_stores").select("id, name, city, crm_contact_id").not("crm_contact_id", "is", null).limit(500),
-      ]);
+      // Load own brands from user_brands (primary), fall back to market_brands
+      const { data: userOwnBrands } = await supabase
+        .from("user_brands")
+        .select("id, brand_name")
+        .eq("is_own_brand", true);
 
-      const ownList: MarketBrand[]  = ownRes.data  ?? [];
-      const compList: MarketBrand[] = compRes.data ?? [];
-      const storeList: GapStore[]   = storeRes.data ?? [];
+      const { data: userCompetitorBrands } = await supabase
+        .from("user_brands")
+        .select("id, brand_name")
+        .eq("is_own_brand", false);
+
+      // Fallback: if user_brands is empty, use market_brands flags
+      let ownBrandNames: string[] = (userOwnBrands ?? []).map((b: any) => b.brand_name);
+      let competitorBrandNames: string[] = (userCompetitorBrands ?? []).map((b: any) => b.brand_name);
+
+      if (!ownBrandNames.length) {
+        const { data: mktOwn } = await supabase.from("market_brands").select("name").eq("is_own_brand", true);
+        ownBrandNames = (mktOwn ?? []).map((b: any) => b.name);
+      }
+      if (!competitorBrandNames.length) {
+        const { data: mktComp } = await supabase.from("market_brands").select("name").eq("is_competitor_brand", true);
+        competitorBrandNames = (mktComp ?? []).map((b: any) => b.name);
+      }
+
+      const { data: storeData } = await supabase
+        .from("intel_stores")
+        .select("id, name, city, crm_contact_id")
+        .not("crm_contact_id", "is", null)
+        .limit(500);
+
+      const storeList: GapStore[] = storeData ?? [];
+
+      // Convert name arrays to GapBrand[] with synthetic ids (index-based)
+      const ownList: GapBrand[] = ownBrandNames.map((name, i) => ({ id: String(i), name }));
+      const compList: GapBrand[] = competitorBrandNames.map((name, i) => ({ id: String(i), name }));
 
       setOwnBrands(ownList);
       setCompetitorBrands(compList);
@@ -1278,7 +1304,7 @@ function GapAnalysis() {
         <Target className="w-8 h-8 text-muted-foreground mx-auto" />
         <p className="text-sm font-medium text-foreground">No brands configured</p>
         <p className="text-xs text-muted-foreground">
-          Go to <span className="text-primary font-medium">Settings → Brands</span> to add your own brands and competitor brands.
+          Go to <span className="text-primary font-medium">Settings → Brands</span> to add your brands and competitor brands.
         </p>
       </div>
     );
