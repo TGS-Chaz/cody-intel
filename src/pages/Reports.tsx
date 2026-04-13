@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { isExcludedCategory, isExcludedBrand } from "@/lib/analytics-filters";
 import { exportCSV } from "@/lib/export-csv";
-import { BarChart2, Package, Tag, Wifi, Search, Trophy, DollarSign, LayoutList, Target, Download } from "lucide-react";
+import { BarChart2, Package, Tag, Wifi, Search, Trophy, DollarSign, LayoutList, Target, Download, Globe, Zap, Settings2 } from "lucide-react";
+import { SaturationAnalysis } from "./reports/SaturationAnalysis";
+import { SellThrough } from "./reports/SellThrough";
+import { CustomReportBuilder } from "./reports/CustomReportBuilder";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
@@ -53,7 +56,7 @@ interface StoreLeaderRow {
   platform_count: number;
 }
 
-type TabId = "brands" | "categories" | "coverage" | "prices" | "leaderboard" | "distribution" | "gap";
+type TabId = "brands" | "categories" | "coverage" | "prices" | "leaderboard" | "distribution" | "gap" | "saturation" | "velocity" | "custom";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1533,13 +1536,16 @@ function GapAnalysis() {
 type Tab = { id: TabId; label: string; icon: React.ElementType };
 
 const TABS: Tab[] = [
-  { id: "brands",       label: "Brand Rankings",     icon: Tag       },
-  { id: "categories",   label: "Category Breakdown",  icon: Package   },
-  { id: "coverage",     label: "Coverage Summary",    icon: BarChart2 },
+  { id: "brands",       label: "Brand Rankings",     icon: Tag        },
+  { id: "categories",   label: "Category Breakdown",  icon: Package    },
+  { id: "coverage",     label: "Coverage Summary",    icon: BarChart2  },
   { id: "prices",       label: "Price Intelligence",  icon: DollarSign },
-  { id: "leaderboard",  label: "Store Leaderboard",   icon: Trophy    },
+  { id: "leaderboard",  label: "Store Leaderboard",   icon: Trophy     },
   { id: "distribution", label: "Brand Distribution",  icon: LayoutList },
-  { id: "gap",          label: "Gap Analysis",        icon: Target    },
+  { id: "gap",          label: "Gap Analysis",        icon: Target     },
+  { id: "saturation",   label: "Market Saturation",   icon: Globe      },
+  { id: "velocity",     label: "Sell-Through",        icon: Zap        },
+  { id: "custom",       label: "Report Builder",      icon: Settings2  },
 ];
 
 export function Reports() {
@@ -1585,6 +1591,9 @@ export function Reports() {
       <div className={tab === "leaderboard"  ? "" : "hidden"}>{visited.has("leaderboard")  && <StoreLeaderboard />}</div>
       <div className={tab === "distribution" ? "" : "hidden"}>{visited.has("distribution") && <BrandDistribution />}</div>
       <div className={tab === "gap"          ? "" : "hidden"}>{visited.has("gap")          && <GapAnalysis />}</div>
+      <div className={tab === "saturation"   ? "" : "hidden"}>{visited.has("saturation")   && <SaturationAnalysis />}</div>
+      <div className={tab === "velocity"     ? "" : "hidden"}>{visited.has("velocity")     && <SellThrough />}</div>
+      <div className={tab === "custom"       ? "" : "hidden"}>{visited.has("custom")       && <CustomReportBuilder />}</div>
     </div>
   );
 }
