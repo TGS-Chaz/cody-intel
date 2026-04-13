@@ -224,6 +224,112 @@ async function runPlatformBatch(
   return { totalScraped, totalProducts };
 }
 
+// ─── POSaBit fast-scan + per-store scrape pipeline ──────────────────────────
+// Replaces the old discover/scrape-batch loop. Two phases:
+//   1. fast-scan populates posabit credentials on intel_stores in seconds
+//   2. scrape-posabit-single runs per store that now has a merchant_token
+async function runPosabitFastBatch(
+  session:       { access_token: string },
+  supabaseUrl:   string,
+  anonKey:       string,
+  signal:        AbortSignal,
+  onProgress:    (text: string) => void,
+  onStatsRefresh: () => Promise<void>,
+  onBatchDone:   (entries: LogEntry[]) => void,
+): Promise<{ totalScraped: number; totalProducts: number }> {
+  const fnUrl = `${supabaseUrl}/functions/v1/scrape-posabit`;
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${session.access_token}`,
+    apikey: anonKey,
+  };
+
+  // Phase 1 — fast-scan populates posabit_merchant_token on intel_stores
+  onProgress("Fast-scanning stores for POSaBit widgets…");
+  const scanRes = await fetch(fnUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ action: "fast-scan", limit: 500, onlyMissing: true }),
+    signal,
+  });
+  const scanData = await scanRes.json();
+  if (!scanRes.ok) throw new Error(scanData.error ?? `fast-scan HTTP ${scanRes.status}`);
+
+  const newlyCredentialed = (scanData.results ?? [])
+    .filter((r: any) => r.hasPosabit && r.config?.merchant_token);
+
+  // Surface scan results as log entries up front
+  onBatchDone(newlyCredentialed.map((r: any): LogEntry => ({
+    storeName: r.name,
+    city:      r.city ?? null,
+    status:    "saved",
+    reason:    `credentials captured · ${r.detectedUrl ?? ""}`,
+    timestamp: Date.now(),
+  })));
+
+  // Phase 2 — scrape every store with a persisted merchant_token.
+  // Uses a direct supabase read to fetch all posabit-enabled stores (existing +
+  // new from phase 1), because a single store may already have had creds.
+  const { data: readyStores } = await supabase
+    .from("intel_stores")
+    .select("id, name, city")
+    .eq("status", "active")
+    .not("posabit_merchant_token", "is", null);
+
+  const stores = (readyStores ?? []) as Array<{ id: string; name: string; city: string | null }>;
+  if (!stores.length) {
+    onProgress(`No stores with POSaBit credentials yet · scanned ${scanData.scanned ?? 0}`);
+    return { totalScraped: 0, totalProducts: 0 };
+  }
+
+  let totalScraped = 0, totalProducts = 0;
+  for (let i = 0; i < stores.length; i++) {
+    if (signal.aborted) break;
+    const s = stores[i];
+    onProgress(`Scraping ${s.name}${s.city ? `, ${s.city}` : ""} · ${i + 1}/${stores.length} · ${totalProducts.toLocaleString()} products`);
+    try {
+      const r = await fetch(fnUrl, {
+        method: "POST",
+        headers,
+        // storeId-only; scrape-posabit-single reads creds from intel_stores row
+        body: JSON.stringify({ action: "scrape-posabit-single", storeId: s.id }),
+        signal,
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok && data.status === "success") {
+        totalScraped  += 1;
+        totalProducts += data.products_saved ?? 0;
+        onBatchDone([{
+          storeName: s.name, city: s.city,
+          status: "saved", products: data.products_saved,
+          timestamp: Date.now(),
+        }]);
+      } else if (data.status === "empty-menu") {
+        onBatchDone([{
+          storeName: s.name, city: s.city,
+          status: "empty", reason: "empty menu", timestamp: Date.now(),
+        }]);
+      } else {
+        onBatchDone([{
+          storeName: s.name, city: s.city,
+          status: "failed", reason: data.error ?? `HTTP ${r.status}`, timestamp: Date.now(),
+        }]);
+      }
+    } catch (err: any) {
+      if (err.name === "AbortError") break;
+      onBatchDone([{
+        storeName: s.name, city: s.city,
+        status: "failed", reason: err.message, timestamp: Date.now(),
+      }]);
+    }
+    // Refresh dashboard stats every 5 stores
+    if (i % 5 === 4) await onStatsRefresh();
+  }
+
+  await onStatsRefresh();
+  return { totalScraped, totalProducts };
+}
+
 // ─── Build scrape candidate from unmatched discovery ─────────────────────────
 
 function buildScrapeCandidate(d: UnmatchedDiscovery, intel: IntelStore): any | null {
@@ -453,6 +559,22 @@ export function ScraperAdmin() {
     startPolling(platform.id);
     try {
       const { session, supabaseUrl, anonKey } = await getCallParams();
+
+      // POSaBit: use the fast-scan action to populate credentials, then scrape
+      // every store that now has a merchant_token via scrape-posabit-single.
+      // Bypasses the old slow Puppeteer-per-store discover path.
+      if (platform.id === "posabit") {
+        const { totalScraped, totalProducts } = await runPosabitFastBatch(
+          session, supabaseUrl, anonKey, ctrl.signal,
+          (text) => setStatus(platform.id, { progressText: text }),
+          loadStats,
+          (entries) => appendLog(platform.id, entries),
+        );
+        setStatus(platform.id, { state: "done", message: `${totalScraped} stores · ${totalProducts.toLocaleString()} products`, progressText: undefined });
+        if (activeView === "unmatched") loadUnmatched();
+        return;
+      }
+
       const { totalScraped, totalProducts } = await runPlatformBatch(
         platform, session, supabaseUrl, anonKey, ctrl.signal,
         (text) => setStatus(platform.id, { progressText: text }),
@@ -529,50 +651,51 @@ export function ScraperAdmin() {
     setWfRunning(true);
     setWfLog([]);
     setWfDone(0);
-    setWfProgress("Loading stores without websites…");
+    setWfProgress("Running fast POSaBit scan…");
     try {
       const { session, supabaseUrl, anonKey } = await getCallParams();
-      const discRes = await fetch(`${supabaseUrl}/functions/v1/scrape-posabit`, {
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/scrape-posabit`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}`, apikey: anonKey },
-        body: JSON.stringify({ action: "find-websites-discover" }),
+        body: JSON.stringify({ action: "fast-scan", limit: 500, onlyMissing: true }),
         signal: ctrl.signal,
       });
-      const discData = await discRes.json();
-      const candidates: any[] = discData.candidates ?? [];
-      const total: number = discData.total ?? candidates.length;
-      setWfTotal(total);
-      if (!candidates.length) { setWfProgress("All stores already have websites!"); return; }
 
-      const BATCH = 2;
-      let done = 0;
-      for (let i = 0; i < candidates.length; i += BATCH) {
-        if (ctrl.signal.aborted) break;
-        const batch = candidates.slice(i, i + BATCH);
-        setWfProgress(`Searching ${batch[0].name}${batch[0].intelCity ? `, ${batch[0].intelCity}` : ""}… (${done}/${total})`);
-        try {
-          const batchRes = await fetch(`${supabaseUrl}/functions/v1/scrape-posabit`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}`, apikey: anonKey },
-            body: JSON.stringify({ action: "find-websites-batch", stores: batch }),
-            signal: ctrl.signal,
-          });
-          if (batchRes.ok) {
-            const batchData = await batchRes.json();
-            const entries: LogEntry[] = (batchData.results ?? []).map((r: any) => ({
-              storeName: r.store,
-              city: r.city ?? null,
-              status: r.status as LogEntryStatus,
-              reason: r.reason ?? r.website ?? undefined,
-              timestamp: Date.now(),
-            }));
-            setWfLog((prev) => [...prev, ...entries]);
-          }
-        } catch { /* ignore per-batch errors, keep looping */ }
-        done += batch.length;
-        setWfDone(done);
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error ?? `fast-scan HTTP ${res.status}`);
       }
-      setWfProgress(ctrl.signal.aborted ? "Stopped" : `Done — ${done} stores searched`);
+
+      const data = await res.json();
+      const results: any[] = data.results ?? [];
+      setWfTotal(results.length);
+
+      // Map every result to a log entry — show hits first, then misses
+      const hits = results.filter(r => r.hasPosabit);
+      const misses = results.filter(r => !r.hasPosabit);
+      const entries: LogEntry[] = [
+        ...hits.map((r): LogEntry => ({
+          storeName: r.name,
+          city:      r.city ?? null,
+          status:    "saved",
+          reason:    r.detectedUrl ? `POSaBit · ${r.detectedUrl}` : "POSaBit detected",
+          timestamp: Date.now(),
+        })),
+        ...misses.map((r): LogEntry => ({
+          storeName: r.name,
+          city:      r.city ?? null,
+          status:    "no-widget",
+          reason:    r.markers?.length ? `markers: ${r.markers.join(", ")}` : "no POSaBit markers",
+          timestamp: Date.now(),
+        })),
+      ];
+      setWfLog(entries);
+      setWfDone(results.length);
+
+      setWfProgress(
+        `Done in ${data.total_ms ?? "?"}ms — scanned ${data.scanned}, POSaBit confirmed ${data.found}, credentials saved to ${data.updated}`,
+      );
     } catch (err: any) {
       if (err.name !== "AbortError") setWfProgress(`Error: ${err.message}`);
       else setWfProgress("Stopped");
