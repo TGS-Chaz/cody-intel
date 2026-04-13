@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { fetchCensusByZip } from "@/lib/census";
+import { useOrg } from "@/lib/org";
+import { StoreScorecard } from "@/components/StoreScorecard";
 import type { IntelStore, DispensaryMenu } from "@/lib/types";
 import {
   ArrowLeft, Package, Calendar, Wifi, Pencil, Check, X, Loader2, Users, DollarSign, MapPin, GraduationCap, RefreshCw,
@@ -176,6 +178,7 @@ function EditableField({ label, value, onSave, type = "text", options, multiline
 export function StoreDetail() {
   const { id }   = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { orgId } = useOrg();
 
   const [store, setStore]               = useState<IntelStore | null>(null);
   const [menus, setMenus]               = useState<DispensaryMenu[]>([]);
@@ -406,6 +409,9 @@ export function StoreDetail() {
           </div>
         </div>
       )}
+
+      {/* ── Store Scorecard (Feature 5) ─────────────────────────────────── */}
+      <StoreScorecard storeId={store.id} orgId={orgId} />
 
       {/* ── Demographics ────────────────────────────────────────────────── */}
       {store.zip && (
