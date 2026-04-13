@@ -13,6 +13,7 @@ import { ScraperAdmin } from "@/pages/ScraperAdmin";
 import { Reports } from "@/pages/Reports";
 import { AskCody } from "@/pages/AskCody";
 import { Settings } from "@/pages/Settings";
+import { Alerts } from "@/pages/Alerts";
 
 function ProtectedRoutes() {
   const { session, loading } = useAuth();
@@ -40,6 +41,7 @@ function ProtectedRoutes() {
             <Route path="scrapers" element={<ScraperAdmin />} />
             <Route path="reports" element={<Reports />} />
             <Route path="ask" element={<AskCody />} />
+            <Route path="alerts" element={<Alerts />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

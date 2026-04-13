@@ -13,8 +13,10 @@ import {
   Sunset,
   Building2,
   Sparkles,
+  Bell,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import { useProfile, profileInitials } from "@/lib/profile";
 import { useTheme } from "@/lib/theme";
 import { useOrg } from "@/lib/org";
@@ -28,6 +30,7 @@ const navItems = [
   { to: "/stores",    icon: Store,           label: "Stores" },
   { to: "/scrapers",  icon: Radio,           label: "Scrapers" },
   { to: "/reports",   icon: BarChart2,       label: "Reports" },
+  { to: "/alerts",    icon: Bell,            label: "Alerts" },
   { to: "/settings",  icon: Settings,        label: "Settings" },
 ];
 
@@ -58,6 +61,22 @@ export default function AppLayout() {
   const { preference, toggle: toggleTheme } = useTheme();
   const { org } = useOrg();
   const [_signingOut, setSigningOut] = useState(false);
+  const [unreadAlerts, setUnreadAlerts] = useState(0);
+
+  useEffect(() => {
+    supabase.from("intel_alerts").select("id", { count: "exact", head: true })
+      .eq("is_read", false)
+      .then(({ count }) => setUnreadAlerts(count ?? 0));
+
+    const ch = supabase.channel("layout-alerts")
+      .on("postgres_changes", { event: "*", schema: "public", table: "intel_alerts" }, () => {
+        supabase.from("intel_alerts").select("id", { count: "exact", head: true })
+          .eq("is_read", false)
+          .then(({ count }) => setUnreadAlerts(count ?? 0));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -139,6 +158,11 @@ export default function AppLayout() {
                     }`}
                   />
                   <span className="flex-1">{label}</span>
+                  {to === "/alerts" && unreadAlerts > 0 && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-destructive text-white leading-none">
+                      {unreadAlerts > 99 ? "99+" : unreadAlerts}
+                    </span>
+                  )}
                 </NavLink>
               );
             })}
