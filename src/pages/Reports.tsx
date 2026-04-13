@@ -7,6 +7,7 @@ import { SaturationAnalysis } from "./reports/SaturationAnalysis";
 import { SellThrough } from "./reports/SellThrough";
 import { CustomReportBuilder } from "./reports/CustomReportBuilder";
 import { ProductAffinity } from "./reports/ProductAffinity";
+import { exportReportToPDF } from "@/lib/pdf-export";
 
 const DistributionMap = lazy(() =>
   import("@/components/maps/DistributionMap").then((m) => ({ default: m.DistributionMap }))
@@ -1757,10 +1758,42 @@ export function Reports() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-5 animate-fade-up">
-      <div>
-        <h1 className="text-foreground">Reports</h1>
-        <div className="header-underline mt-1" />
-        <p className="text-sm text-muted-foreground mt-1">Market intelligence — data loads per tab</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-foreground">Reports</h1>
+          <div className="header-underline mt-1" />
+          <p className="text-sm text-muted-foreground mt-1">Market intelligence — data loads per tab</p>
+        </div>
+        <button
+          onClick={async () => {
+            const { data: brands } = await supabase
+              .from("daily_brand_metrics")
+              .select("brand, store_count, total_products, avg_price")
+              .order("store_count", { ascending: false })
+              .limit(50);
+            exportReportToPDF({
+              title:    "Cody Intel — Brand Report",
+              subtitle: `Top ${brands?.length ?? 0} brands by store coverage`,
+              filters:  "All brands, all stores",
+              summary:  `Generated ${new Date().toLocaleString()}. Rankings reflect latest market snapshot across the full store universe in our catalog.`,
+              sections: [{
+                heading: "Top Brands by Store Count",
+                columns: ["#", "Brand", "Stores", "Products", "Avg Price"],
+                rows:    (brands ?? []).map((b: any, i: number) => [
+                  i + 1,
+                  b.brand,
+                  b.store_count,
+                  b.total_products?.toLocaleString() ?? "",
+                  b.avg_price != null ? `$${Number(b.avg_price).toFixed(2)}` : "",
+                ]),
+              }],
+            });
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Export PDF
+        </button>
       </div>
 
       {/* Tab bar — two rows so all 10 tabs are always visible */}
