@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { fetchCensusByZip } from "@/lib/census";
 import type { IntelStore, DispensaryMenu } from "@/lib/types";
 import {
-  ArrowLeft, Package, Calendar, Wifi, Pencil, Check, X, Loader2,
+  ArrowLeft, Package, Calendar, Wifi, Pencil, Check, X, Loader2, Users, DollarSign, MapPin, GraduationCap, RefreshCw,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -181,6 +182,7 @@ export function StoreDetail() {
   const [items, setItems]               = useState<MenuItem[]>([]);
   const [selectedMenu, setSelectedMenu] = useState<string | null>(null);
   const [loading, setLoading]           = useState(true);
+  const [fetchingDemo, setFetchingDemo] = useState(false);
 
   // ── Data loading ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -223,6 +225,18 @@ export function StoreDetail() {
       .eq("id", store!.id);
     if (error) throw new Error(error.message);
     setStore((prev) => (prev ? { ...prev, [field]: val } : prev));
+  }
+
+  // ── Demographics fetch ───────────────────────────────────────────────────────
+  async function fetchDemographics() {
+    if (!store?.zip) return;
+    setFetchingDemo(true);
+    const demo = await fetchCensusByZip(store.zip);
+    if (demo) {
+      await supabase.from("intel_stores").update({ demographic_data: demo }).eq("id", store.id);
+      setStore((prev) => prev ? { ...prev, demographic_data: demo as unknown as Record<string, unknown> } : prev);
+    }
+    setFetchingDemo(false);
   }
 
   // ── Loading / not-found states ──────────────────────────────────────────────
@@ -390,6 +404,69 @@ export function StoreDetail() {
                 </div>
               ))}
           </div>
+        </div>
+      )}
+
+      {/* ── Demographics ────────────────────────────────────────────────── */}
+      {store.zip && (
+        <div className="rounded-lg border border-border bg-card shadow-premium overflow-hidden">
+          <div
+            className="px-4 py-2.5 bg-sidebar flex items-center gap-2 justify-between"
+            style={{ borderBottom: "1px solid var(--glass-border)" }}
+          >
+            <div className="flex items-center gap-2">
+              <Users className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+                Area Demographics · ZIP {store.zip}
+              </span>
+            </div>
+            <button
+              onClick={fetchDemographics}
+              disabled={fetchingDemo}
+              className="flex items-center gap-1.5 text-[11px] font-medium text-primary hover:text-primary/80 disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw className={`w-3 h-3 ${fetchingDemo ? "animate-spin" : ""}`} />
+              {store.demographic_data ? "Refresh" : "Fetch data"}
+            </button>
+          </div>
+
+          {store.demographic_data ? (() => {
+            const d = store.demographic_data as Record<string, unknown>;
+            const fmt = (v: unknown, prefix = "", suffix = "") =>
+              v != null ? `${prefix}${typeof v === "number" ? v.toLocaleString() : v}${suffix}` : "—";
+            const tiles = [
+              { icon: Users,          label: "Population",         value: fmt(d.population) },
+              { icon: DollarSign,     label: "Median Income",      value: fmt(d.medianIncome, "$") },
+              { icon: MapPin,         label: "Median Age",         value: fmt(d.medianAge, "", " yrs") },
+              { icon: GraduationCap,  label: "Bachelor's+",        value: fmt(d.bachelorsDegreePct, "", "%") },
+            ];
+            return (
+              <div className="p-5 space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {tiles.map(({ icon: Icon, label, value }) => (
+                    <div key={label} className="rounded-lg border border-border bg-background/50 px-4 py-3 text-center">
+                      <Icon className="w-4 h-4 text-muted-foreground mx-auto mb-1" />
+                      <p className="text-lg font-semibold text-foreground tabular-nums">{value}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{label}</p>
+                    </div>
+                  ))}
+                </div>
+                {d.urbanClass != null && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Area classification: <span className="text-foreground font-medium capitalize">{String(d.urbanClass)}</span>
+                    {d.fetchedAt != null && ` · fetched ${new Date(String(d.fetchedAt)).toLocaleDateString()}`}
+                  </p>
+                )}
+              </div>
+            );
+          })() : (
+            <div className="px-5 py-8 text-center">
+              <Users className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+              <p className="text-xs text-muted-foreground">
+                {fetchingDemo ? "Fetching Census data…" : 'Click "Fetch data" to load US Census demographics for this ZIP code.'}
+              </p>
+            </div>
+          )}
         </div>
       )}
 

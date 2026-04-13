@@ -31,6 +31,7 @@ export interface IntelStore {
   created_at: string;
   updated_at: string;
   notes: string | null;
+  demographic_data: Record<string, unknown> | null;
 }
 
 export interface DispensaryMenu {
