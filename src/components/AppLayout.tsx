@@ -30,6 +30,7 @@ import { useOrg } from "@/lib/org";
 import codyIcon from "@/assets/cody-icon.svg";
 import CodyGlow from "@/components/CodyGlow";
 import UserAvatar from "@/components/UserAvatar";
+import { OnboardingTour } from "@/components/OnboardingTour";
 
 const navItems = [
   { to: "/",          icon: LayoutDashboard, label: "Dashboard",  end: true },
@@ -358,6 +359,9 @@ export default function AppLayout() {
           </NavLink>
         </nav>
       </main>
+
+      {/* Onboarding tour (Feature 7) */}
+      <OnboardingTour />
     </div>
   );
 }
