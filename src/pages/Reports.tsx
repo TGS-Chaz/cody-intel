@@ -423,27 +423,80 @@ function CoverageReport() {
 
 // ── Report 4: Price Intelligence ──────────────────────────────────────────────
 
+interface BrandPriceRow {
+  brand: string;
+  category: string;
+  avgPrice: number;
+  vsMarket: number;
+  storeCount: number;
+  isOwn: boolean;
+}
+
+interface StoreMenuItem {
+  raw_name: string | null;
+  raw_brand: string | null;
+  raw_category: string | null;
+  raw_price: number | null;
+}
+
+interface PriceStore {
+  id: string;
+  name: string;
+  city: string;
+  crm_contact_id: string;
+}
+
 function PriceReport() {
-  const [rows, setRows]     = useState<PriceRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows]               = useState<PriceRow[]>([]);
+  const [loading, setLoading]         = useState(true);
+
+  // Market positioning state
+  const [ownBrandNames, setOwnBrandNames]     = useState<Set<string>>(new Set());
+  const [brandPriceRows, setBrandPriceRows]   = useState<BrandPriceRow[]>([]);
+  const [marketAvgByCategory, setMarketAvgByCategory] = useState<Record<string, number>>({});
+
+  // Store comparison state
+  const [stores, setStores]               = useState<PriceStore[]>([]);
+  const [storeSearch, setStoreSearch]     = useState("");
+  const [storeDropdownOpen, setStoreDropdownOpen] = useState(false);
+  const [selectedStore, setSelectedStore] = useState<PriceStore | null>(null);
+  const [storeItems, setStoreItems]       = useState<StoreMenuItem[]>([]);
+  const [storeLoading, setStoreLoading]   = useState(false);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data: menus } = await supabase
-        .from("dispensary_menus")
-        .select("id, intel_store_id")
-        .not("intel_store_id", "is", null);
-      if (!menus?.length) { setLoading(false); return; }
+
+      // Load own brands + store list in parallel with menus
+      const [menusRes, ownBrandsRes, storesRes] = await Promise.all([
+        supabase.from("dispensary_menus").select("id, intel_store_id").not("intel_store_id", "is", null),
+        supabase.from("market_brands").select("id, name").eq("is_own_brand", true),
+        supabase.from("intel_stores").select("id, name, city, crm_contact_id")
+          .not("crm_contact_id", "is", null)
+          .order("name")
+          .limit(300),
+      ]);
+
+      const menus = menusRes.data ?? [];
+      const ownNames = new Set((ownBrandsRes.data ?? []).map(b => b.name.toLowerCase()));
+      setOwnBrandNames(ownNames);
+      setStores(storesRes.data ?? []);
+
+      if (!menus.length) { setLoading(false); return; }
 
       const validIds = menus.map(m => m.id);
+      const menuToStore: Record<string, string> = {};
+      for (const m of menus) menuToStore[m.id] = m.intel_store_id;
+
       const CHUNK = 400;
       const catAgg: Record<string, { prices: number[] }> = {};
+      // For brand price table: brand+category → { prices, stores }
+      const brandCatAgg: Record<string, { prices: number[]; stores: Set<string>; isOwn: boolean }> = {};
 
       for (let i = 0; i < validIds.length; i += CHUNK) {
         const { data } = await supabase
           .from("menu_items")
-          .select("raw_category, raw_price, dispensary_menu_id")
+          .select("raw_category, raw_price, raw_brand, dispensary_menu_id")
           .eq("is_on_menu", true)
           .not("raw_category", "is", null)
           .not("raw_price", "is", null)
@@ -452,9 +505,28 @@ function PriceReport() {
         if (data) {
           for (const item of data) {
             const cat = item.raw_category;
+            const brand = item.raw_brand;
             if (!cat || item.raw_price == null || isExcludedCategory(cat)) continue;
+            if (brand && isExcludedBrand(brand)) continue;
+
+            // Category aggregation (existing)
             if (!catAgg[cat]) catAgg[cat] = { prices: [] };
             catAgg[cat].prices.push(item.raw_price);
+
+            // Brand+category aggregation (new)
+            if (brand) {
+              const key = `${brand}|||${cat}`;
+              if (!brandCatAgg[key]) {
+                brandCatAgg[key] = {
+                  prices: [],
+                  stores: new Set(),
+                  isOwn: ownNames.has(brand.toLowerCase()),
+                };
+              }
+              brandCatAgg[key].prices.push(item.raw_price);
+              const storeId = menuToStore[item.dispensary_menu_id];
+              if (storeId) brandCatAgg[key].stores.add(storeId);
+            }
           }
         }
       }
@@ -471,10 +543,64 @@ function PriceReport() {
         .sort((a, b) => b.avg - a.avg);
 
       setRows(sorted);
+
+      const mktAvg: Record<string, number> = {};
+      for (const r of sorted) mktAvg[r.category] = r.avg;
+      setMarketAvgByCategory(mktAvg);
+
+      // Build brand price rows — only show own brands + a sample of others (top 5 per category)
+      const allBrandRows: BrandPriceRow[] = Object.entries(brandCatAgg)
+        .filter(([, { prices }]) => prices.length >= 3)
+        .map(([key, { prices, stores, isOwn }]) => {
+          const [brand, category] = key.split("|||");
+          const avgPrice = prices.reduce((s, v) => s + v, 0) / prices.length;
+          const mkt = mktAvg[category] ?? 0;
+          return { brand, category, avgPrice, vsMarket: avgPrice - mkt, storeCount: stores.size, isOwn };
+        });
+
+      // Keep all own brand rows + filter to make the table manageable
+      const ownRows = allBrandRows.filter(r => r.isOwn);
+      const categoriesWithOwn = new Set(ownRows.map(r => r.category));
+
+      // For categories where we have own brands, show top competitors too
+      const topCompRows = allBrandRows
+        .filter(r => !r.isOwn && categoriesWithOwn.has(r.category))
+        .sort((a, b) => b.storeCount - a.storeCount)
+        .slice(0, 40);
+
+      const combined = [...ownRows, ...topCompRows]
+        .sort((a, b) => a.category.localeCompare(b.category) || (b.isOwn ? 1 : 0) - (a.isOwn ? 1 : 0));
+
+      setBrandPriceRows(combined);
       setLoading(false);
     }
     load();
   }, []);
+
+  // Load store items when a store is selected
+  useEffect(() => {
+    if (!selectedStore) return;
+    async function loadStore() {
+      setStoreLoading(true);
+      setStoreItems([]);
+      const { data } = await supabase
+        .from("menu_items")
+        .select("raw_name, raw_brand, raw_category, raw_price")
+        .eq("dispensary_id", selectedStore!.crm_contact_id)
+        .eq("is_on_menu", true)
+        .gt("raw_price", 0)
+        .limit(2000);
+      if (data) {
+        const filtered = data.filter(item =>
+          item.raw_category && !isExcludedCategory(item.raw_category) &&
+          (!item.raw_brand || !isExcludedBrand(item.raw_brand))
+        );
+        setStoreItems(filtered);
+      }
+      setStoreLoading(false);
+    }
+    loadStore();
+  }, [selectedStore]);
 
   if (loading) return <Skeleton rows={8} />;
 
@@ -483,9 +609,68 @@ function PriceReport() {
     avg: parseFloat(r.avg.toFixed(2)),
   }));
 
+  // Market positioning: categories where own brands have data
+  const ownCategoryPositioning: { category: string; ownAvg: number; mktAvg: number; diff: number }[] = [];
+  const ownRowsByCategory: Record<string, BrandPriceRow[]> = {};
+  for (const r of brandPriceRows) {
+    if (r.isOwn) {
+      if (!ownRowsByCategory[r.category]) ownRowsByCategory[r.category] = [];
+      ownRowsByCategory[r.category].push(r);
+    }
+  }
+  for (const [cat, catRows] of Object.entries(ownRowsByCategory)) {
+    const ownAvg = catRows.reduce((s, r) => s + r.avgPrice, 0) / catRows.length;
+    const mktAvg = marketAvgByCategory[cat] ?? 0;
+    ownCategoryPositioning.push({ category: cat, ownAvg, mktAvg, diff: ownAvg - mktAvg });
+  }
+  ownCategoryPositioning.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+  // Store comparison
+  const filteredStores = storeSearch
+    ? stores.filter(s => s.name.toLowerCase().includes(storeSearch.toLowerCase()) || s.city.toLowerCase().includes(storeSearch.toLowerCase()))
+    : stores;
+
+  const ownStoreItems   = storeItems.filter(item => item.raw_brand && ownBrandNames.has(item.raw_brand.toLowerCase()));
+  const compStoreItems  = storeItems.filter(item => !item.raw_brand || !ownBrandNames.has(item.raw_brand.toLowerCase()));
+  const ownStoreAvg     = ownStoreItems.length ? ownStoreItems.reduce((s, i) => s + (i.raw_price ?? 0), 0) / ownStoreItems.length : null;
+  const compStoreAvg    = compStoreItems.length ? compStoreItems.reduce((s, i) => s + (i.raw_price ?? 0), 0) / compStoreItems.length : null;
+  const storeAvgDiff    = ownStoreAvg != null && compStoreAvg != null ? ownStoreAvg - compStoreAvg : null;
+
   return (
     <div className="space-y-5">
-      {/* Bar chart: avg price by category */}
+      {/* ── Section 0: Market Positioning Summary ── */}
+      {ownCategoryPositioning.length > 0 && (
+        <div className="rounded-xl border border-border bg-card/60 p-4 space-y-3">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Your Avg Price vs. Market — by Category</p>
+          <div className="flex flex-wrap gap-2">
+            {ownCategoryPositioning.map(({ category, ownAvg, mktAvg, diff }) => {
+              const absDiff = Math.abs(diff);
+              const label = absDiff < 0.05
+                ? "At market"
+                : diff > 0
+                  ? `Above market $${absDiff.toFixed(2)}`
+                  : `Below market $${absDiff.toFixed(2)}`;
+              const badgeStyle: React.CSSProperties = absDiff < 0.05
+                ? { background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" }
+                : diff > 0
+                  ? { background: "hsl(0 80% 60% / 0.12)", color: "hsl(0 72% 55%)", border: "1px solid hsl(0 72% 55% / 0.25)" }
+                  : { background: "hsl(142 70% 45% / 0.12)", color: "hsl(142 65% 40%)", border: "1px solid hsl(142 65% 40% / 0.25)" };
+              return (
+                <div key={category} className="flex flex-col items-start gap-0.5 rounded-lg border border-border bg-card px-3 py-2 min-w-[160px]">
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">{category}</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-sm font-bold font-mono-data text-primary">${ownAvg.toFixed(2)}</span>
+                    <span className="text-[10px] text-muted-foreground">vs ${mktAvg.toFixed(2)} mkt</span>
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={badgeStyle}>{label}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Section 1: Bar chart: avg price by category ── */}
       <div className="rounded-lg border border-border bg-card p-4 shadow-premium">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
           Average Price by Category
@@ -508,7 +693,7 @@ function PriceReport() {
         </ResponsiveContainer>
       </div>
 
-      {/* Detail table */}
+      {/* ── Section 2: Detail table ── */}
       <div className="rounded-lg border border-border bg-card overflow-hidden shadow-premium">
         <table className="w-full text-sm">
           <thead>
@@ -535,6 +720,198 @@ function PriceReport() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* ── Section 3: Price comparison table by brand ── */}
+      {brandPriceRows.length > 0 && (
+        <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
+          <div className="px-4 py-3 border-b border-border">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Price Comparison by Brand</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Your brands vs. market — sorted by category</p>
+          </div>
+          <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-sidebar">
+                <tr style={{ borderBottom: "1px solid var(--glass-border)" }}>
+                  <th className={thCls}>Brand</th>
+                  <th className={thCls}>Category</th>
+                  <th className={thCls}>Avg Price</th>
+                  <th className={thCls}>vs. Market</th>
+                  <th className={thCls}>Stores</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40">
+                {brandPriceRows.map((r, i) => {
+                  const absDiff = Math.abs(r.vsMarket);
+                  const vsLabel = absDiff < 0.05 ? "At market" : r.vsMarket > 0 ? `+$${absDiff.toFixed(2)}` : `-$${absDiff.toFixed(2)}`;
+                  const vsColor = absDiff < 0.05 ? "text-muted-foreground" : r.vsMarket > 0 ? "text-red-400" : "text-emerald-500";
+                  return (
+                    <tr
+                      key={`${r.brand}-${r.category}-${i}`}
+                      className="hover:bg-accent/30 transition-colors"
+                      style={r.isOwn ? { background: "hsl(168 100% 42% / 0.05)" } : undefined}
+                    >
+                      <td className="px-4 py-2 font-medium text-sm" style={r.isOwn ? { color: "hsl(var(--primary))" } : { color: "hsl(var(--foreground))" }}>
+                        {r.brand}
+                        {r.isOwn && <span className="ml-1.5 text-[9px] font-bold uppercase tracking-widest opacity-70">Yours</span>}
+                      </td>
+                      <td className="px-4 py-2 text-xs text-muted-foreground">{r.category}</td>
+                      <td className="px-4 py-2 font-mono-data text-xs font-medium text-foreground">${r.avgPrice.toFixed(2)}</td>
+                      <td className={`px-4 py-2 font-mono-data text-xs font-medium ${vsColor}`}>{vsLabel}</td>
+                      <td className="px-4 py-2 font-mono-data text-xs text-muted-foreground">{r.storeCount}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Section 4: Store-level price comparison ── */}
+      <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
+        <div className="px-4 py-3 border-b border-border">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Store-Level Price Comparison</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">Select a store to compare your products vs. competitors on their menu</p>
+        </div>
+        <div className="p-4 space-y-4">
+          {/* Store search/select */}
+          <div className="relative max-w-sm">
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest block mb-1">Select Store</label>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <input
+                value={selectedStore ? selectedStore.name : storeSearch}
+                onChange={e => {
+                  setStoreSearch(e.target.value);
+                  setSelectedStore(null);
+                  setStoreDropdownOpen(true);
+                }}
+                onFocus={() => setStoreDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setStoreDropdownOpen(false), 150)}
+                placeholder="Search stores…"
+                className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              />
+            </div>
+            {storeDropdownOpen && filteredStores.length > 0 && !selectedStore && (
+              <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-md border border-border bg-card shadow-lg">
+                {filteredStores.slice(0, 40).map(s => (
+                  <button
+                    key={s.id}
+                    onMouseDown={() => { setSelectedStore(s); setStoreSearch(""); setStoreDropdownOpen(false); }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent/40 transition-colors"
+                  >
+                    <span className="font-medium text-foreground">{s.name}</span>
+                    <span className="ml-2 text-[11px] text-muted-foreground">{s.city}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Store comparison results */}
+          {selectedStore && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-foreground">
+                  At <span className="text-primary">{selectedStore.name}</span>
+                  <span className="text-muted-foreground font-normal"> — your products vs. competitors</span>
+                </p>
+                {storeLoading && <span className="text-xs text-muted-foreground animate-pulse">Loading…</span>}
+              </div>
+
+              {!storeLoading && storeItems.length === 0 && (
+                <p className="text-sm text-muted-foreground">No menu data found for this store.</p>
+              )}
+
+              {!storeLoading && storeItems.length > 0 && (
+                <>
+                  {/* Summary bar */}
+                  <div className="flex flex-wrap gap-3 text-xs font-mono-data">
+                    {ownStoreAvg != null && (
+                      <span className="text-primary font-medium">Your avg: ${ownStoreAvg.toFixed(2)} ({ownStoreItems.length} items)</span>
+                    )}
+                    {compStoreAvg != null && (
+                      <span className="text-muted-foreground">Competitor avg: ${compStoreAvg.toFixed(2)} ({compStoreItems.length} items)</span>
+                    )}
+                    {storeAvgDiff != null && (
+                      <span className={Math.abs(storeAvgDiff) < 0.05 ? "text-muted-foreground" : storeAvgDiff > 0 ? "text-red-400" : "text-emerald-500"}>
+                        You are ${Math.abs(storeAvgDiff).toFixed(2)} {storeAvgDiff > 0 ? "above" : storeAvgDiff < 0 ? "below" : "at"} competitor avg
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Two-column layout */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Our products */}
+                    <div className="rounded-lg border border-primary/30 overflow-hidden" style={{ background: "hsl(168 100% 42% / 0.03)" }}>
+                      <div className="px-3 py-2 border-b border-primary/20 flex items-center justify-between">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-primary">Our Products ({ownStoreItems.length})</p>
+                        {ownStoreAvg != null && <span className="text-[10px] font-mono-data text-primary">avg ${ownStoreAvg.toFixed(2)}</span>}
+                      </div>
+                      {ownStoreItems.length === 0 ? (
+                        <p className="px-3 py-4 text-xs text-muted-foreground">None found on this menu.</p>
+                      ) : (
+                        <div className="max-h-72 overflow-y-auto">
+                          <table className="w-full text-xs">
+                            <thead className="sticky top-0 bg-card">
+                              <tr style={{ borderBottom: "1px solid var(--glass-border)" }}>
+                                <th className="text-left px-3 py-1.5 text-[9px] font-semibold text-muted-foreground uppercase tracking-widest">Product</th>
+                                <th className="text-left px-3 py-1.5 text-[9px] font-semibold text-muted-foreground uppercase tracking-widest">Category</th>
+                                <th className="text-left px-3 py-1.5 text-[9px] font-semibold text-muted-foreground uppercase tracking-widest">Price</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border/30">
+                              {ownStoreItems.slice(0, 100).map((item, i) => (
+                                <tr key={i} className="hover:bg-primary/5 transition-colors">
+                                  <td className="px-3 py-1.5 text-foreground font-medium truncate max-w-[140px]">{item.raw_name ?? "—"}</td>
+                                  <td className="px-3 py-1.5 text-muted-foreground">{item.raw_category ?? "—"}</td>
+                                  <td className="px-3 py-1.5 font-mono-data text-primary">${(item.raw_price ?? 0).toFixed(2)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Competitor products */}
+                    <div className="rounded-lg border border-border overflow-hidden">
+                      <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Competitor Products ({compStoreItems.length})</p>
+                        {compStoreAvg != null && <span className="text-[10px] font-mono-data text-muted-foreground">avg ${compStoreAvg.toFixed(2)}</span>}
+                      </div>
+                      {compStoreItems.length === 0 ? (
+                        <p className="px-3 py-4 text-xs text-muted-foreground">None found on this menu.</p>
+                      ) : (
+                        <div className="max-h-72 overflow-y-auto">
+                          <table className="w-full text-xs">
+                            <thead className="sticky top-0 bg-card">
+                              <tr style={{ borderBottom: "1px solid var(--glass-border)" }}>
+                                <th className="text-left px-3 py-1.5 text-[9px] font-semibold text-muted-foreground uppercase tracking-widest">Product</th>
+                                <th className="text-left px-3 py-1.5 text-[9px] font-semibold text-muted-foreground uppercase tracking-widest">Category</th>
+                                <th className="text-left px-3 py-1.5 text-[9px] font-semibold text-muted-foreground uppercase tracking-widest">Price</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border/30">
+                              {compStoreItems.slice(0, 100).map((item, i) => (
+                                <tr key={i} className="hover:bg-accent/30 transition-colors">
+                                  <td className="px-3 py-1.5 text-foreground font-medium truncate max-w-[140px]">{item.raw_name ?? "—"}</td>
+                                  <td className="px-3 py-1.5 text-muted-foreground">{item.raw_category ?? "—"}</td>
+                                  <td className="px-3 py-1.5 font-mono-data text-foreground">${(item.raw_price ?? 0).toFixed(2)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
