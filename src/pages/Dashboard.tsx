@@ -6,6 +6,7 @@ import { Store, Package, TrendingUp, Bell, Zap, AlertTriangle, Info, BarChart2 }
 const DashboardMap = lazy(() =>
   import("@/components/maps/DashboardMap").then((m) => ({ default: m.DashboardMap }))
 );
+import { MyDistribution } from "@/components/MyDistribution";
 import { supabase } from "@/lib/supabase";
 import { useOrg } from "@/lib/org";
 import { isExcludedBrand } from "@/lib/analytics-filters";
@@ -514,6 +515,9 @@ export function Dashboard() {
           </button>
         </div>
       )}
+
+      {/* ── My Distribution (Feature 1) ─────────────────────────────────────── */}
+      {orgId && <MyDistribution orgId={orgId} />}
 
       {/* ── Market Map ──────────────────────────────────────────────────────── */}
       <Suspense fallback={

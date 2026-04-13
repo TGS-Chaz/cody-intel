@@ -5,6 +5,7 @@ import {
   ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { MatchReview } from "@/components/MatchReview";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -426,6 +427,7 @@ export function MyProducts() {
   const [editGroup,   setEditGroup]   = useState<ProductGroup | null | undefined>(undefined);
   const [deleteGroup, setDeleteGroup] = useState<ProductGroup | null>(null);
   const [deleting,    setDeleting]    = useState(false);
+  const [tab, setTab] = useState<"catalog" | "matches">("catalog");
   const showModal = editGroup !== undefined;
 
   // Resolve user's active org once, then load all products for it
@@ -547,17 +549,46 @@ export function MyProducts() {
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight leading-none">Product Catalog</h1>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight leading-none">My Products</h1>
             <div className="h-px mt-2" style={{ background: "linear-gradient(to right, hsl(168 100% 42% / 0.5), transparent)" }} />
           </div>
-          <button
-            onClick={() => setEditGroup(null)}
-            disabled={!orgId}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" /> Add Product
-          </button>
+          {tab === "catalog" && (
+            <button
+              onClick={() => setEditGroup(null)}
+              disabled={!orgId}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Product
+            </button>
+          )}
         </div>
+
+        {/* Tabs */}
+        <div className="flex items-center gap-1 mb-6 border-b border-border">
+          {[
+            { id: "catalog", label: "Catalog" },
+            { id: "matches", label: "Match Review" },
+          ].map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id as typeof tab)}
+              className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
+                tab === t.id
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "matches" && orgId && <MatchReview orgId={orgId} />}
+        {tab === "matches" && !orgId && (
+          <div className="text-center py-12 text-sm text-muted-foreground">Loading org…</div>
+        )}
+        {tab === "catalog" && (<>
+        {/* CATALOG START */}
 
         {/* Stats */}
         {!loading && products.length > 0 && (
@@ -812,6 +843,7 @@ export function MyProducts() {
             })}
           </div>
         )}
+        </>)}
       </div>
 
       {/* Modal */}
