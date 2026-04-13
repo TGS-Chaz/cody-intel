@@ -9,6 +9,7 @@ const DashboardMap = lazy(() =>
 import { MyDistribution } from "@/components/MyDistribution";
 import { NormalizationStats } from "@/components/NormalizationStats";
 import { WeightedDistribution } from "@/components/WeightedDistribution";
+import { PlanGate } from "@/components/PlanGate";
 import { supabase } from "@/lib/supabase";
 import { useOrg } from "@/lib/org";
 import { isExcludedBrand } from "@/lib/analytics-filters";
@@ -522,7 +523,9 @@ export function Dashboard() {
       {orgId && (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4">
           <MyDistribution orgId={orgId} />
-          <WeightedDistribution orgId={orgId} />
+          <PlanGate feature="weighted_distribution">
+            <WeightedDistribution orgId={orgId} />
+          </PlanGate>
         </div>
       )}
 

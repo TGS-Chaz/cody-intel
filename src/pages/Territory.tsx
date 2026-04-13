@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Map } from "lucide-react";
+import { PlanGate } from "@/components/PlanGate";
 
 const TerritoryMap = lazy(() =>
   import("@/components/maps/TerritoryMap").then((m) => ({ default: m.TerritoryMap }))
@@ -18,13 +19,15 @@ export function Territory() {
         </div>
       </div>
 
-      <Suspense fallback={
-        <div className="h-[560px] rounded-xl border border-border bg-card/50 flex items-center justify-center">
-          <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-        </div>
-      }>
-        <TerritoryMap />
-      </Suspense>
+      <PlanGate feature="territory_planning">
+        <Suspense fallback={
+          <div className="h-[560px] rounded-xl border border-border bg-card/50 flex items-center justify-center">
+            <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          </div>
+        }>
+          <TerritoryMap />
+        </Suspense>
+      </PlanGate>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { fetchCensusByZip } from "@/lib/census";
 import { useOrg } from "@/lib/org";
 import { StoreScorecard } from "@/components/StoreScorecard";
+import { PlanGate } from "@/components/PlanGate";
 import type { IntelStore, DispensaryMenu } from "@/lib/types";
 import {
   ArrowLeft, Package, Calendar, Wifi, Pencil, Check, X, Loader2, Users, DollarSign, MapPin, GraduationCap, RefreshCw,
@@ -411,7 +412,9 @@ export function StoreDetail() {
       )}
 
       {/* ── Store Scorecard (Feature 5) ─────────────────────────────────── */}
-      <StoreScorecard storeId={store.id} orgId={orgId} />
+      <PlanGate feature="store_scorecards">
+        <StoreScorecard storeId={store.id} orgId={orgId} />
+      </PlanGate>
 
       {/* ── Demographics ────────────────────────────────────────────────── */}
       {store.zip && (

@@ -8,6 +8,8 @@ import { SellThrough } from "./reports/SellThrough";
 import { CustomReportBuilder } from "./reports/CustomReportBuilder";
 import { ProductAffinity } from "./reports/ProductAffinity";
 import { exportReportToPDF } from "@/lib/pdf-export";
+import { PlanGate } from "@/components/PlanGate";
+import { usePlan } from "@/lib/plans";
 
 const DistributionMap = lazy(() =>
   import("@/components/maps/DistributionMap").then((m) => ({ default: m.DistributionMap }))
@@ -1750,6 +1752,7 @@ const TAB_GROUPS = [
 export function Reports() {
   const [tab, setTab] = useState<TabId>("brands");
   const [visited, setVisited] = useState<Set<TabId>>(new Set(["brands"]));
+  const { canAccess } = usePlan();
 
   function switchTab(id: TabId) {
     setTab(id);
@@ -1766,6 +1769,7 @@ export function Reports() {
         </div>
         <button
           onClick={async () => {
+            if (!canAccess("pdf_exports")) { window.location.href = "/pricing"; return; }
             const { data: brands } = await supabase
               .from("daily_brand_metrics")
               .select("brand, store_count, total_products, avg_price")
@@ -1836,7 +1840,7 @@ export function Reports() {
       <div className={tab === "velocity"     ? "" : "hidden"}>{visited.has("velocity")     && <SellThrough />}</div>
       <div className={tab === "custom"       ? "" : "hidden"}>{visited.has("custom")       && <CustomReportBuilder />}</div>
       <div className={tab === "deals"        ? "" : "hidden"}>{visited.has("deals")        && <DealsReport />}</div>
-      <div className={tab === "affinity"     ? "" : "hidden"}>{visited.has("affinity")     && <ProductAffinity />}</div>
+      <div className={tab === "affinity"     ? "" : "hidden"}>{visited.has("affinity")     && <PlanGate feature="product_affinity"><ProductAffinity /></PlanGate>}</div>
     </div>
   );
 }

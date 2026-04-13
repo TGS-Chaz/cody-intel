@@ -22,6 +22,7 @@ import { Competitors } from "@/pages/Competitors";
 import { WeeklyBriefing } from "@/pages/WeeklyBriefing";
 import { ApiDocs } from "@/pages/ApiDocs";
 import { Territory } from "@/pages/Territory";
+import { Pricing } from "@/pages/Pricing";
 
 function ProtectedRoutes() {
   const { session, loading } = useAuth();
@@ -56,6 +57,7 @@ function ProtectedRoutes() {
             <Route path="widget" element={<WidgetEmbed />} />
             <Route path="competitors" element={<Competitors />} />
             <Route path="territory" element={<Territory />} />
+            <Route path="pricing" element={<Pricing />} />
             <Route path="briefing" element={<WeeklyBriefing />} />
             <Route path="api-docs" element={<ApiDocs />} />
           </Route>
