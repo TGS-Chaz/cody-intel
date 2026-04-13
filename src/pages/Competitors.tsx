@@ -1,9 +1,13 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, lazy, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 import { useOrg } from "@/lib/org";
 import { isExcludedBrand } from "@/lib/analytics-filters";
 import { Users2, TrendingUp, TrendingDown, Minus, AlertCircle, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+
+const CompetitorMap = lazy(() =>
+  import("@/components/maps/CompetitorMap").then((m) => ({ default: m.CompetitorMap }))
+);
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -472,6 +476,19 @@ export function Competitors() {
               </div>
             </div>
           )}
+
+          {/* ── Competitor Map ── */}
+          <Suspense fallback={
+            <div className="h-[440px] rounded-xl border border-border bg-card/50 flex items-center justify-center">
+              <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+            </div>
+          }>
+            <CompetitorMap
+              ownBrand={selectedOwn}
+              compBrand={selectedComp}
+              snapshotByStore={snapshotByStore}
+            />
+          </Suspense>
 
           {/* ── Recent Alerts ── */}
           {alerts.length > 0 && (

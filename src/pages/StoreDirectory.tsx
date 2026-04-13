@@ -1,9 +1,13 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useOrg } from "@/lib/org";
 import type { IntelStore } from "@/lib/types";
-import { Search, ChevronRight, WifiOff, ArrowUpDown, Tag, Plus, X } from "lucide-react";
+import { Search, ChevronRight, WifiOff, ArrowUpDown, Tag, Plus, X, Map, List } from "lucide-react";
+
+const StoreMapView = lazy(() =>
+  import("@/components/maps/StoreMapView").then((m) => ({ default: m.StoreMapView }))
+);
 
 const PLATFORMS = ["dutchie-api", "leafly", "weedmaps", "posabit-api", "jane"];
 const PLATFORM_LABELS: Record<string, string> = {
@@ -203,6 +207,7 @@ export function StoreDirectory() {
   const [stores, setStores]     = useState<IntelStore[]>([]);
   const [menuMap, setMenuMap]   = useState<Record<string, string[]>>({});
   const [loading, setLoading]   = useState(true);
+  const [viewMode, setViewMode] = useState<"table" | "map">("table");
   const [query, setQuery]       = useState("");
   const [cityFilter, setCityFilter]       = useState("");
   const [countyFilter, setCountyFilter]   = useState("");
@@ -312,14 +317,34 @@ export function StoreDirectory() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-4 animate-fade-up">
-      <div>
-        <h1 className="text-foreground">Store Directory</h1>
-        <div className="header-underline mt-1" />
-        <p className="text-sm text-muted-foreground mt-1">
-          {loading
-            ? "Loading…"
-            : `${filtered.length} of ${stores.length} stores · click a row to view & edit`}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-foreground">Store Directory</h1>
+          <div className="header-underline mt-1" />
+          <p className="text-sm text-muted-foreground mt-1">
+            {loading
+              ? "Loading…"
+              : `${filtered.length} of ${stores.length} stores · click a row to view & edit`}
+          </p>
+        </div>
+        <div className="flex items-center gap-1 p-1 rounded-lg border border-border bg-card shrink-0">
+          <button
+            onClick={() => setViewMode("table")}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium transition-all ${
+              viewMode === "table" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <List className="w-3.5 h-3.5" /> Table
+          </button>
+          <button
+            onClick={() => setViewMode("map")}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium transition-all ${
+              viewMode === "map" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Map className="w-3.5 h-3.5" /> Map
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -374,7 +399,19 @@ export function StoreDirectory() {
         </select>
       </div>
 
-      <div className="rounded-lg border border-border bg-card overflow-hidden shadow-premium">
+      {/* ── Map view ─────────────────────────────────────────────────────────── */}
+      {viewMode === "map" && !loading && (
+        <Suspense fallback={
+          <div className="h-[560px] rounded-xl border border-border bg-card/50 flex items-center justify-center">
+            <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          </div>
+        }>
+          <StoreMapView stores={filtered} menuMap={menuMap} />
+        </Suspense>
+      )}
+
+      {/* ── Table view ───────────────────────────────────────────────────────── */}
+      {viewMode === "table" && <div className="rounded-lg border border-border bg-card overflow-hidden shadow-premium">
         {loading ? (
           <div className="space-y-px">
             {[...Array(10)].map((_, i) => <div key={i} className="h-10 skeleton-shimmer" />)}
@@ -514,7 +551,7 @@ export function StoreDirectory() {
             </tbody>
           </table>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

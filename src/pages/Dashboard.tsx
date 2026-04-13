@@ -1,12 +1,23 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Store, Package, TrendingUp, Bell, Zap, AlertTriangle, Info, BarChart2 } from "lucide-react";
+
+const DashboardMap = lazy(() =>
+  import("@/components/maps/DashboardMap").then((m) => ({ default: m.DashboardMap }))
+);
 import { supabase } from "@/lib/supabase";
 import { useOrg } from "@/lib/org";
 import { isExcludedBrand } from "@/lib/analytics-filters";
+import { callEdgeFunction } from "@/lib/edge-function";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
+
+interface NormStats {
+  processed: number;
+  normalized: number;
+  needsReview: number;
+}
 
 interface FastStats {
   totalStores: number;
@@ -15,6 +26,7 @@ interface FastStats {
   topStores: { id: string; name: string; city: string; total_products: number | null; menu_last_updated: string | null }[];
   recentAlerts: { id: string; title: string; severity: string; alert_type: string; brand_name: string | null; created_at: string }[];
   freshness: string | null;
+  normStats: NormStats | null;
 }
 
 interface UserBrand {
@@ -225,6 +237,7 @@ export function Dashboard() {
 
   const [fast, setFast] = useState<FastStats | null>(null);
   const [fastLoading, setFastLoading] = useState(true);
+  const [normRunning, setNormRunning] = useState(false);
 
   const [userBrands, setUserBrands] = useState<UserBrand[]>([]);
   const [heavy, setHeavy] = useState<HeavyStats | null>(null);
@@ -241,15 +254,17 @@ export function Dashboard() {
     ]);
 
     // Also fetch user_brands and freshness
-    const [brandsRes, freshRes] = await Promise.all([
+    const [brandsRes, freshRes, normRunRes] = await Promise.all([
       orgId
         ? supabase.from("user_brands").select("id, brand_name, is_own_brand").eq("org_id", orgId)
         : Promise.resolve({ data: [] as UserBrand[], error: null }),
       supabase.from("intel_stores").select("menu_last_updated").not("menu_last_updated", "is", null).order("menu_last_updated", { ascending: false }).limit(1),
+      supabase.from("normalization_runs").select("items_processed, items_normalized, items_needing_review").order("run_at", { ascending: false }).limit(1),
     ]);
 
     setUserBrands((brandsRes.data as UserBrand[]) ?? []);
 
+    const normRow = normRunRes.data?.[0] ?? null;
     setFast({
       totalStores: storesRes.count ?? 0,
       storesWithMenus: storesWithMenuRes.count ?? 0,
@@ -257,6 +272,11 @@ export function Dashboard() {
       topStores: (topStoresRes.data ?? []) as FastStats["topStores"],
       recentAlerts: (recentAlertsRes.data ?? []) as FastStats["recentAlerts"],
       freshness: (freshRes.data?.[0]?.menu_last_updated as string | null) ?? null,
+      normStats: normRow ? {
+        processed: normRow.items_processed ?? 0,
+        normalized: normRow.items_normalized ?? 0,
+        needsReview: normRow.items_needing_review ?? 0,
+      } : null,
     });
     setFastLoading(false);
   }, [orgId]);
@@ -468,6 +488,41 @@ export function Dashboard() {
           </div>
         );
       })()}
+
+      {/* ── Data Quality strip ──────────────────────────────────────────────── */}
+      {!fastLoading && fast?.normStats && (
+        <div className="rounded-xl border border-border bg-card px-5 py-3 flex items-center gap-6 text-sm">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Data Quality</span>
+          <span className="text-foreground"><strong>{fast.normStats.normalized.toLocaleString()}</strong> products normalized</span>
+          {fast.normStats.needsReview > 0 && (
+            <span className="text-amber-500"><strong>{fast.normStats.needsReview}</strong> need review</span>
+          )}
+          <button
+            onClick={async () => {
+              setNormRunning(true);
+              try {
+                await callEdgeFunction("normalize-products", {});
+                await loadFast();
+              } finally {
+                setNormRunning(false);
+              }
+            }}
+            disabled={normRunning}
+            className="ml-auto text-xs text-primary hover:text-primary/80 disabled:opacity-50 transition-colors"
+          >
+            {normRunning ? "Running…" : "Run Normalizer"}
+          </button>
+        </div>
+      )}
+
+      {/* ── Market Map ──────────────────────────────────────────────────────── */}
+      <Suspense fallback={
+        <div className="rounded-xl border border-border bg-card/50 h-[476px] flex items-center justify-center">
+          <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+        </div>
+      }>
+        <DashboardMap />
+      </Suspense>
 
       {/* ── Brand Performance + Market Pulse ────────────────────────────────── */}
       <motion.div

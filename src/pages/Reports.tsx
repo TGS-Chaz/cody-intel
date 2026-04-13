@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 import { isExcludedCategory, isExcludedBrand } from "@/lib/analytics-filters";
 import { exportCSV } from "@/lib/export-csv";
@@ -6,6 +6,10 @@ import { BarChart2, Package, Tag, Wifi, Search, Trophy, DollarSign, LayoutList, 
 import { SaturationAnalysis } from "./reports/SaturationAnalysis";
 import { SellThrough } from "./reports/SellThrough";
 import { CustomReportBuilder } from "./reports/CustomReportBuilder";
+
+const DistributionMap = lazy(() =>
+  import("@/components/maps/DistributionMap").then((m) => ({ default: m.DistributionMap }))
+);
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
@@ -1054,6 +1058,8 @@ function StoreLeaderboard() {
 function BrandDistribution() {
   const [all, setAll]       = useState<BrandRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mapOwn,  setMapOwn]  = useState("");
+  const [mapComp, setMapComp] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -1215,6 +1221,41 @@ function BrandDistribution() {
             </tbody>
           </table>
         </div>
+      </div>
+      {/* Distribution Map */}
+      <div className="rounded-lg border border-border bg-card p-4 shadow-premium space-y-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+          Geographic Distribution Map
+        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <select
+            value={mapOwn}
+            onChange={(e) => setMapOwn(e.target.value)}
+            className="px-2.5 py-1.5 rounded-md border border-border bg-card text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-[180px]"
+          >
+            <option value="">— Own brand —</option>
+            {all.slice(0, 60).map((b) => (
+              <option key={b.brand} value={b.brand}>{b.brand}</option>
+            ))}
+          </select>
+          <select
+            value={mapComp}
+            onChange={(e) => setMapComp(e.target.value)}
+            className="px-2.5 py-1.5 rounded-md border border-border bg-card text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-[180px]"
+          >
+            <option value="">— Competitor (optional) —</option>
+            {all.slice(0, 60).map((b) => (
+              <option key={b.brand} value={b.brand}>{b.brand}</option>
+            ))}
+          </select>
+        </div>
+        <Suspense fallback={
+          <div className="h-[400px] rounded-xl border border-border bg-card/50 flex items-center justify-center">
+            <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          </div>
+        }>
+          <DistributionMap ownBrand={mapOwn} competitorBrand={mapComp} />
+        </Suspense>
       </div>
     </div>
   );
