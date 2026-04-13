@@ -18,6 +18,7 @@ import {
   Globe,
   Package,
   Users2,
+  Newspaper,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -36,6 +37,7 @@ const navItems = [
   { to: "/competitors", icon: Users2,         label: "Competitors" },
   { to: "/reports",   icon: BarChart2,       label: "Reports" },
   { to: "/trends",    icon: TrendingUp,      label: "Trends" },
+  { to: "/briefing",  icon: Newspaper,       label: "Briefing" },
   { to: "/alerts",    icon: Bell,            label: "Alerts" },
   { to: "/widget",    icon: Globe,           label: "Widget" },
   { to: "/settings",  icon: Settings,        label: "Settings" },
