@@ -2,10 +2,11 @@ import { useEffect, useState, lazy, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 import { isExcludedCategory, isExcludedBrand } from "@/lib/analytics-filters";
 import { exportCSV } from "@/lib/export-csv";
-import { BarChart2, Package, Tag, Wifi, Search, Trophy, DollarSign, LayoutList, Target, Download, Globe, Zap, Settings2 } from "lucide-react";
+import { BarChart2, Package, Tag, Wifi, Search, Trophy, DollarSign, LayoutList, Target, Download, Globe, Zap, Settings2, Sparkles } from "lucide-react";
 import { SaturationAnalysis } from "./reports/SaturationAnalysis";
 import { SellThrough } from "./reports/SellThrough";
 import { CustomReportBuilder } from "./reports/CustomReportBuilder";
+import { ProductAffinity } from "./reports/ProductAffinity";
 
 const DistributionMap = lazy(() =>
   import("@/components/maps/DistributionMap").then((m) => ({ default: m.DistributionMap }))
@@ -60,7 +61,7 @@ interface StoreLeaderRow {
   platform_count: number;
 }
 
-type TabId = "brands" | "categories" | "coverage" | "prices" | "leaderboard" | "distribution" | "gap" | "saturation" | "velocity" | "custom" | "deals";
+type TabId = "brands" | "categories" | "coverage" | "prices" | "leaderboard" | "distribution" | "gap" | "saturation" | "velocity" | "custom" | "deals" | "affinity";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1739,6 +1740,7 @@ const TAB_GROUPS = [
       { id: "velocity"   as TabId, label: "Sell-Through",      icon: Zap       },
       { id: "custom"     as TabId, label: "Report Builder",    icon: Settings2 },
       { id: "deals"      as TabId, label: "Deals",             icon: Tag       },
+      { id: "affinity"   as TabId, label: "Product Affinity",  icon: Sparkles  },
     ],
   },
 ];
@@ -1801,6 +1803,7 @@ export function Reports() {
       <div className={tab === "velocity"     ? "" : "hidden"}>{visited.has("velocity")     && <SellThrough />}</div>
       <div className={tab === "custom"       ? "" : "hidden"}>{visited.has("custom")       && <CustomReportBuilder />}</div>
       <div className={tab === "deals"        ? "" : "hidden"}>{visited.has("deals")        && <DealsReport />}</div>
+      <div className={tab === "affinity"     ? "" : "hidden"}>{visited.has("affinity")     && <ProductAffinity />}</div>
     </div>
   );
 }
