@@ -1,199 +1,201 @@
-// Plan definitions + feature-gate hook
-//
-// Reads `plan` from the active organization loaded by useOrg(). Every gated
-// feature in the app is listed here so the pricing page and PlanGate stay in
-// sync.
+// ─────────────────────────────────────────────────────────────────────────────
+// Cody Intel tier system — Scout / Analyst / Professional / Enterprise
+// Reads organizations.intel_plan (shared DB with CRM; CRM uses crm_plan).
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { useOrg } from "./org";
 
-export type PlanId = "starter" | "pro" | "enterprise";
+export type PlanId = "scout" | "analyst" | "professional" | "enterprise";
 
 export type FeatureKey =
-  | "my_products_catalog"           // Starter
-  | "stock_out_alerts"              // Starter
-  | "basic_distribution"            // Starter
-  | "ask_cody_basic"                // Starter (5/day)
+  // Scout tier
+  | "dashboard_map"
+  | "distribution_map"
+  | "brand_rankings_top_20"
+  | "stock_out_alerts"
+  | "weekly_refresh"
+  | "my_products_catalog"
+  | "store_directory"
 
-  | "competitor_tracking"           // Pro
-  | "gap_analysis"                  // Pro
-  | "price_comparison"              // Pro
-  | "csv_exports"                   // Pro
-  | "store_tags"                    // Pro
-  | "custom_alerts"                 // Pro (up to 10)
-  | "ask_cody_pro"                  // Pro (25/day)
+  // Analyst tier
+  | "full_reports"
+  | "competitor_monitoring"
+  | "gap_analysis"
+  | "price_intelligence"
+  | "csv_exports"
+  | "store_tags"
+  | "daily_refresh"
+  | "custom_alerts"
 
-  | "rest_api"                      // Enterprise
-  | "pdf_exports"                   // Enterprise
-  | "territory_planning"            // Enterprise
-  | "store_locator_widget"          // Enterprise
-  | "scheduled_scrapes"             // Enterprise
-  | "custom_report_builder"         // Enterprise
-  | "weighted_distribution"         // Enterprise
-  | "product_affinity"              // Enterprise
-  | "store_scorecards"              // Enterprise
-  | "census_demographics"           // Enterprise
-  | "priority_support"              // Enterprise
-  | "ask_cody_unlimited";           // Enterprise
+  // Professional tier
+  | "saturation_analysis"
+  | "sell_through"
+  | "weighted_distribution"
+  | "store_scorecards"
+  | "ai_weekly_briefing"
+  | "pdf_exports"
+  | "territory_planning"
+  | "scheduled_scrapes"
+  | "twelve_hour_refresh"
+
+  // Enterprise tier
+  | "product_affinity"
+  | "census_demographics"
+  | "ai_purchase_orders"
+  | "ai_predictions"
+  | "custom_report_builder"
+  | "rest_api"
+  | "store_locator_widget"
+  | "six_hour_refresh"
+  | "dedicated_support";
 
 export interface PlanLimits {
-  maxProducts:       number;     // -1 = unlimited
-  maxAlerts:         number;
-  maxAiQuestions:    number;     // per day
-  maxCategories:     number;     // how many competitor categories
+  maxUsers:        number;   // -1 = unlimited
+  maxProducts:     number;
+  maxBrands:       number;
+  maxAlertRules:   number;
+  maxAiQuestions:  number;   // per day
+  refreshHours:    number;   // how often scheduled refreshes run
 }
 
 interface PlanDef {
-  id:          PlanId;
-  name:        string;
-  priceMonth:  number;
-  tagline:     string;
-  limits:      PlanLimits;
-  features:    FeatureKey[];      // keys included in this tier
+  id:           PlanId;
+  name:         string;
+  priceMonth:   number;
+  priceAnnual:  number;      // per month when billed annually (2mo free)
+  tagline:      string;
+  limits:       PlanLimits;
+  features:     FeatureKey[];
 }
 
-const UNLIMITED = -1;
+const U = -1;
 
 export const PLANS: Record<PlanId, PlanDef> = {
-  starter: {
-    id:         "starter",
-    name:       "Starter",
-    priceMonth: 49,
-    tagline:    "See where your products are stocked.",
-    limits: {
-      maxProducts:    50,
-      maxAlerts:      3,
-      maxAiQuestions: 5,
-      maxCategories:  0,
-    },
+  scout: {
+    id: "scout", name: "Scout",
+    priceMonth: 49, priceAnnual: 40,
+    tagline: "See where your brand shows up.",
+    limits: { maxUsers: 2,  maxProducts: 25,  maxBrands: 3,  maxAlertRules: 3,  maxAiQuestions: 5,  refreshHours: 168 },
     features: [
-      "my_products_catalog",
-      "stock_out_alerts",
-      "basic_distribution",
-      "ask_cody_basic",
+      "dashboard_map", "distribution_map", "brand_rankings_top_20",
+      "stock_out_alerts", "weekly_refresh", "my_products_catalog", "store_directory",
     ],
   },
-  pro: {
-    id:         "pro",
-    name:       "Pro",
-    priceMonth: 149,
-    tagline:    "Track up to 3 competitor categories.",
-    limits: {
-      maxProducts:    200,
-      maxAlerts:      10,
-      maxAiQuestions: 25,
-      maxCategories:  3,
-    },
+  analyst: {
+    id: "analyst", name: "Analyst",
+    priceMonth: 149, priceAnnual: 124,
+    tagline: "Track competitors. Find gaps.",
+    limits: { maxUsers: 5,  maxProducts: 100, maxBrands: 10, maxAlertRules: 10, maxAiQuestions: 25, refreshHours: 24 },
     features: [
-      "my_products_catalog",
-      "stock_out_alerts",
-      "basic_distribution",
-      "ask_cody_basic",
-      "competitor_tracking",
-      "gap_analysis",
-      "price_comparison",
-      "csv_exports",
-      "store_tags",
-      "custom_alerts",
-      "ask_cody_pro",
+      "dashboard_map", "distribution_map", "brand_rankings_top_20",
+      "stock_out_alerts", "my_products_catalog", "store_directory",
+      "full_reports", "competitor_monitoring", "gap_analysis",
+      "price_intelligence", "csv_exports", "store_tags",
+      "daily_refresh", "custom_alerts",
+    ],
+  },
+  professional: {
+    id: "professional", name: "Professional",
+    priceMonth: 299, priceAnnual: 249,
+    tagline: "Deep analytics. Territory planning.",
+    limits: { maxUsers: 10, maxProducts: 500, maxBrands: 25, maxAlertRules: 50, maxAiQuestions: 100, refreshHours: 12 },
+    features: [
+      "dashboard_map", "distribution_map", "brand_rankings_top_20",
+      "stock_out_alerts", "my_products_catalog", "store_directory",
+      "full_reports", "competitor_monitoring", "gap_analysis",
+      "price_intelligence", "csv_exports", "store_tags", "custom_alerts",
+      "saturation_analysis", "sell_through", "weighted_distribution",
+      "store_scorecards", "ai_weekly_briefing", "pdf_exports",
+      "territory_planning", "scheduled_scrapes", "twelve_hour_refresh",
     ],
   },
   enterprise: {
-    id:         "enterprise",
-    name:       "Enterprise",
-    priceMonth: 399,
-    tagline:    "Everything. All categories, all brands, all stores.",
-    limits: {
-      maxProducts:    UNLIMITED,
-      maxAlerts:      UNLIMITED,
-      maxAiQuestions: UNLIMITED,
-      maxCategories:  UNLIMITED,
-    },
+    id: "enterprise", name: "Enterprise",
+    priceMonth: 499, priceAnnual: 416,
+    tagline: "Everything. Unlimited. Plus API.",
+    limits: { maxUsers: U, maxProducts: U, maxBrands: U, maxAlertRules: U, maxAiQuestions: U, refreshHours: 6 },
     features: [
-      "my_products_catalog",
-      "stock_out_alerts",
-      "basic_distribution",
-      "ask_cody_basic",
-      "competitor_tracking",
-      "gap_analysis",
-      "price_comparison",
-      "csv_exports",
-      "store_tags",
-      "custom_alerts",
-      "ask_cody_pro",
-      "rest_api",
-      "pdf_exports",
-      "territory_planning",
-      "store_locator_widget",
-      "scheduled_scrapes",
-      "custom_report_builder",
-      "weighted_distribution",
-      "product_affinity",
-      "store_scorecards",
-      "census_demographics",
-      "priority_support",
-      "ask_cody_unlimited",
+      "dashboard_map", "distribution_map", "brand_rankings_top_20",
+      "stock_out_alerts", "my_products_catalog", "store_directory",
+      "full_reports", "competitor_monitoring", "gap_analysis",
+      "price_intelligence", "csv_exports", "store_tags", "custom_alerts",
+      "saturation_analysis", "sell_through", "weighted_distribution",
+      "store_scorecards", "ai_weekly_briefing", "pdf_exports",
+      "territory_planning", "scheduled_scrapes",
+      "product_affinity", "census_demographics", "ai_purchase_orders",
+      "ai_predictions", "custom_report_builder", "rest_api",
+      "store_locator_widget", "six_hour_refresh", "dedicated_support",
     ],
   },
 };
 
-// Human-friendly labels for the pricing comparison table
 export const FEATURE_LABELS: Record<FeatureKey, string> = {
-  my_products_catalog:     "My Products catalog",
-  stock_out_alerts:        "Stock-out alerts",
-  basic_distribution:      "Basic distribution report",
-  ask_cody_basic:          "Ask Cody AI (5/day)",
-
-  competitor_tracking:     "Competitor monitoring (up to 3 categories)",
-  gap_analysis:            "Gap analysis",
-  price_comparison:        "Price comparison",
-  csv_exports:             "CSV exports",
-  store_tags:              "Store tags",
-  custom_alerts:           "Custom alerts (up to 10)",
-  ask_cody_pro:            "Ask Cody AI (25/day)",
-
-  rest_api:                "REST API access",
-  pdf_exports:             "PDF report exports",
-  territory_planning:      "Territory planning",
-  store_locator_widget:    "Store locator widget",
-  scheduled_scrapes:       "Scheduled auto-scrapes",
-  custom_report_builder:   "Custom report builder",
-  weighted_distribution:   "Weighted distribution metrics",
-  product_affinity:        "Product affinity / basket analysis",
-  store_scorecards:        "Store scorecards",
-  census_demographics:     "Census demographics",
-  priority_support:        "Priority support",
-  ask_cody_unlimited:      "Ask Cody AI (unlimited)",
+  // Scout
+  dashboard_map:          "Dashboard map",
+  distribution_map:       "Distribution map",
+  brand_rankings_top_20:  "Brand rankings (top 20)",
+  stock_out_alerts:       "Stock-out alerts",
+  weekly_refresh:         "Weekly data refresh",
+  my_products_catalog:    "My Products catalog",
+  store_directory:        "Store directory",
+  // Analyst
+  full_reports:           "Full report suite",
+  competitor_monitoring:  "Competitor monitoring",
+  gap_analysis:           "Gap analysis",
+  price_intelligence:     "Price intelligence",
+  csv_exports:            "CSV exports",
+  store_tags:             "Store tags",
+  daily_refresh:          "Daily data refresh",
+  custom_alerts:          "Custom alert rules",
+  // Professional
+  saturation_analysis:    "Market saturation analysis",
+  sell_through:           "Sell-through reports",
+  weighted_distribution:  "Weighted distribution metrics",
+  store_scorecards:       "Store scorecards",
+  ai_weekly_briefing:     "AI weekly briefing",
+  pdf_exports:            "PDF exports",
+  territory_planning:     "Territory planning",
+  scheduled_scrapes:      "Scheduled scrapes",
+  twelve_hour_refresh:    "12-hour data refresh",
+  // Enterprise
+  product_affinity:       "Product affinity / basket analysis",
+  census_demographics:    "Census demographics",
+  ai_purchase_orders:     "AI purchase orders",
+  ai_predictions:         "AI predictions",
+  custom_report_builder:  "Custom report builder",
+  rest_api:               "REST API access",
+  store_locator_widget:   "Store locator widget",
+  six_hour_refresh:       "6-hour data refresh",
+  dedicated_support:      "Dedicated support",
 };
 
-// Resolve a plan string (possibly unknown / legacy) to a known tier
-// organizations.plan is shared with the CRM, which has additional tiers
-// ("intel", "intel_plus", "free"). Map everything Intel-equivalent to
-// "enterprise" so those customers don't get downgraded to Starter when the
-// CRM bumps their plan past "enterprise".
-export function resolvePlan(raw: string | null | undefined): PlanId {
-  if (raw === "pro") return "pro";
-  if (raw === "enterprise" || raw === "intel" || raw === "intel_plus") return "enterprise";
-  return "starter";
-}
+export const TIER_ORDER: PlanId[] = ["scout", "analyst", "professional", "enterprise"];
 
-// ── Hook ─────────────────────────────────────────────────────────────────────
+// CRM shares the same org; when it bumps someone past our tiers we still grant
+// the equivalent Intel level.
+export function resolvePlan(raw: string | null | undefined): PlanId {
+  if (raw === "analyst" || raw === "professional" || raw === "enterprise" || raw === "scout") return raw;
+  // Legacy CRM tier mappings
+  if (raw === "intel" || raw === "intel_plus") return "enterprise";
+  return "scout";
+}
 
 export function usePlan() {
   const { org } = useOrg();
-  const planId  = resolvePlan(org?.plan ?? null);
-  const plan    = PLANS[planId];
-  const featureSet = new Set(plan.features);
-
+  // Prefer intel_plan; fall back to the legacy `plan` column for older orgs.
+  const raw = (org as any)?.intel_plan ?? (org as any)?.plan ?? null;
+  const planId = resolvePlan(raw);
+  const plan   = PLANS[planId];
+  const set    = new Set(plan.features);
   return {
-    plan:      planId,
-    planDef:   plan,
-    limits:    plan.limits,
-    canAccess: (k: FeatureKey) => featureSet.has(k),
-    // Minimum plan required for a feature (for upgrade CTA)
+    plan:         planId,
+    planDef:      plan,
+    limits:       plan.limits,
+    canAccess:    (k: FeatureKey) => set.has(k),
     requiredPlan: (k: FeatureKey): PlanId => {
-      if (PLANS.starter.features.includes(k))    return "starter";
-      if (PLANS.pro.features.includes(k))        return "pro";
+      for (const p of TIER_ORDER) if (PLANS[p].features.includes(k)) return p;
       return "enterprise";
     },
+    isAtLeast:    (target: PlanId) => TIER_ORDER.indexOf(planId) >= TIER_ORDER.indexOf(target),
   };
 }

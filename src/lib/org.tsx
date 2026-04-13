@@ -7,7 +7,9 @@ export interface Organization {
   name: string;
   slug: string;
   logo_url: string | null;
-  plan: string;
+  plan: string;            // legacy single-tier field — kept for backwards compat
+  intel_plan: string | null; // preferred — Intel tier (scout/analyst/professional/enterprise)
+  crm_plan:   string | null; // the CRM app reads this instead
 }
 
 export interface OrgMembership {
@@ -52,7 +54,7 @@ export function OrgProvider({ children }: { children: ReactNode }) {
       const orgIds = members.map((m: { org_id: string }) => m.org_id);
       const { data: orgs, error: orgErr } = await supabase
         .from("organizations")
-        .select("id, name, slug, logo_url, plan")
+        .select("id, name, slug, logo_url, plan, intel_plan, crm_plan")
         .in("id", orgIds);
 
       if (orgErr) { setLoading(false); return; }
