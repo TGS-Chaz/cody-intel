@@ -166,8 +166,13 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
 };
 
 // Resolve a plan string (possibly unknown / legacy) to a known tier
+// organizations.plan is shared with the CRM, which has additional tiers
+// ("intel", "intel_plus", "free"). Map everything Intel-equivalent to
+// "enterprise" so those customers don't get downgraded to Starter when the
+// CRM bumps their plan past "enterprise".
 export function resolvePlan(raw: string | null | undefined): PlanId {
-  if (raw === "pro" || raw === "enterprise") return raw;
+  if (raw === "pro") return "pro";
+  if (raw === "enterprise" || raw === "intel" || raw === "intel_plus") return "enterprise";
   return "starter";
 }
 
