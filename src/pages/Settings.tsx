@@ -5,6 +5,7 @@ import { useProfile } from "@/lib/profile";
 import { useTheme } from "@/lib/theme";
 import { useOrg } from "@/lib/org";
 import { Sun, Moon, Sunset, User, Tag, X, Plus, Search, Bell, Trash2, ChevronDown, ChevronUp, Key, Copy, Check, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { ScrapeSchedule } from "@/components/ScrapeSchedule";
 
 // ── Brands Section ────────────────────────────────────────────────────────────
 
@@ -574,6 +575,9 @@ export function Settings() {
 
       {/* API Keys */}
       <ApiKeysSection />
+
+      {/* Scrape Schedule (Feature 8) */}
+      {orgId && <ScrapeSchedule orgId={orgId} />}
     </div>
   );
 }
