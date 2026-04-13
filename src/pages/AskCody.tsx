@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Loader2, Sparkles } from "lucide-react";
+import { Send, Loader2, Sparkles, BarChart2, Target, Package, Zap } from "lucide-react";
 import { callEdgeFunction } from "@/lib/edge-function";
 import codyIcon from "@/assets/cody-icon.svg";
 
@@ -13,39 +13,47 @@ interface Message {
 
 const SUGGESTED = [
   {
-    category: "Market Trends",
+    category: "Market Intelligence",
+    icon: BarChart2,
+    color: "hsl(217 91% 60%)",
     prompts: [
-      "What brands are trending in Yakima?",
-      "Which product categories are growing fastest?",
-      "What's the most popular product type in Seattle?",
-      "How does Eastern WA compare to Western WA?",
+      "What brands are trending statewide right now?",
+      "Give me a competitive briefing for the Yakima market",
+      "Which categories are growing fastest in Seattle?",
+      "What's the average price trend for flower this month?",
     ],
   },
   {
-    category: "Brand Intelligence",
+    category: "Distribution Gaps",
+    icon: Target,
+    color: "#F59E0B",
     prompts: [
-      "Which stores carry Phat Panda?",
-      "Show me stores that don't carry our brands",
-      "Which brands are in the most dispensaries?",
-      "What are the top 10 brands by store presence?",
+      "Which stores carry Phat Panda but not our brands?",
+      "Where are the biggest distribution gaps for Desert Valley?",
+      "Which stores in Spokane should we target for expansion?",
+      "Find stores carrying competitors but not Painted Rooster",
     ],
   },
   {
-    category: "Pricing",
+    category: "Purchase Orders",
+    icon: Package,
+    color: "#10B981",
     prompts: [
-      "What's the average pre-roll price in Seattle?",
-      "How do edible prices compare across counties?",
-      "Which stores have the lowest flower prices?",
-      "What's the price range for concentrates statewide?",
+      "Suggest a restock order for Fire Cannabis in Yakima",
+      "What should we pitch to a store in Seattle?",
+      "Which of our products are most likely stocked out right now?",
+      "What's selling best across our brand portfolio?",
     ],
   },
   {
-    category: "Coverage & Gaps",
+    category: "Competitive Intel",
+    icon: Zap,
+    color: "#A855F7",
     prompts: [
-      "Which cities have the best menu data coverage?",
-      "How many stores are we missing data for?",
-      "Which platform has the most stores covered?",
-      "Which counties have the least coverage?",
+      "How is Phat Panda performing vs our brands?",
+      "Which competitor dropped prices recently?",
+      "What new brands are entering the Spokane market?",
+      "Where are we losing shelf space to competitors?",
     ],
   },
 ];
@@ -254,10 +262,10 @@ export function AskCody() {
         {showSuggested && (
           <div className="px-6 pb-3 flex flex-wrap gap-1.5 shrink-0">
             {[
-              "What brands are trending in Yakima?",
-              "Which stores carry Phat Panda?",
-              "What's the average pre-roll price in Seattle?",
-              "Show me stores that don't carry our brands",
+              "What brands are trending statewide right now?",
+              "Which stores carry Phat Panda but not our brands?",
+              "Suggest a restock order for Fire Cannabis in Yakima",
+              "Give me a competitive briefing for the Yakima market",
             ].map((p) => (
               <button
                 key={p}
@@ -322,9 +330,12 @@ export function AskCody() {
 
         {SUGGESTED.map((group) => (
           <div key={group.category} className="space-y-1">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50 px-1 pb-0.5">
-              {group.category}
-            </p>
+            <div className="flex items-center gap-1.5 px-1 pb-0.5">
+              <group.icon className="w-3 h-3 shrink-0" style={{ color: group.color }} />
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                {group.category}
+              </p>
+            </div>
             {group.prompts.map((prompt) => (
               <button
                 key={prompt}
