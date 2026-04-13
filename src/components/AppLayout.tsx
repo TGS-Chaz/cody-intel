@@ -12,6 +12,7 @@ import {
   Moon,
   Sunset,
   Building2,
+  Brain,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useProfile, profileInitials } from "@/lib/profile";
@@ -26,6 +27,7 @@ const navItems = [
   { to: "/stores",    icon: Store,           label: "Stores" },
   { to: "/scrapers",  icon: Radio,           label: "Scrapers" },
   { to: "/reports",   icon: BarChart2,       label: "Reports" },
+  { to: "/ask",       icon: Brain,           label: "Ask Cody" },
   { to: "/settings",  icon: Settings,        label: "Settings" },
 ];
 

@@ -11,6 +11,7 @@ import { StoreDirectory } from "@/pages/StoreDirectory";
 import { StoreDetail } from "@/pages/StoreDetail";
 import { ScraperAdmin } from "@/pages/ScraperAdmin";
 import { Reports } from "@/pages/Reports";
+import { AskCody } from "@/pages/AskCody";
 import { Settings } from "@/pages/Settings";
 
 function ProtectedRoutes() {
@@ -38,6 +39,7 @@ function ProtectedRoutes() {
             <Route path="stores/:id" element={<StoreDetail />} />
             <Route path="scrapers" element={<ScraperAdmin />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="ask" element={<AskCody />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>
