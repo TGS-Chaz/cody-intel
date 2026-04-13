@@ -18,6 +18,7 @@ import { Trends } from "@/pages/Trends";
 import { MyProducts } from "@/pages/MyProducts";
 import StoreLocatorWidget from "@/pages/StoreLocatorWidget";
 import { WidgetEmbed } from "@/pages/WidgetEmbed";
+import { Competitors } from "@/pages/Competitors";
 
 function ProtectedRoutes() {
   const { session, loading } = useAuth();
@@ -50,6 +51,7 @@ function ProtectedRoutes() {
             <Route path="my-products" element={<MyProducts />} />
             <Route path="settings" element={<Settings />} />
             <Route path="widget" element={<WidgetEmbed />} />
+            <Route path="competitors" element={<Competitors />} />
           </Route>
         </Routes>
       </ThemeProvider>
