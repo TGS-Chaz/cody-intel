@@ -87,6 +87,7 @@ export function Alerts() {
   const [filterSeverity, setFilterSeverity] = useState("all");
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -112,7 +113,7 @@ export function Alerts() {
 
   async function markRead(id: string) {
     await supabase.from("intel_alerts").update({ is_read: true }).eq("id", id);
-    setAlerts((prev) => prev.map((a) => a.id === id ? { ...a, is_read: true } : a));
+    setAlerts((prev) => prev.filter((a) => a.id !== id));
   }
 
   async function markAllRead() {
@@ -120,9 +121,19 @@ export function Alerts() {
     const unread = alerts.filter((a) => !a.is_read).map((a) => a.id);
     if (unread.length) {
       await supabase.from("intel_alerts").update({ is_read: true }).in("id", unread);
-      setAlerts((prev) => prev.map((a) => ({ ...a, is_read: true })));
+      setAlerts((prev) => prev.filter((a) => a.is_read));
     }
     setMarkingAll(false);
+  }
+
+  async function clearAll() {
+    setClearingAll(true);
+    const ids = filtered.map((a) => a.id);
+    if (ids.length) {
+      await supabase.from("intel_alerts").delete().in("id", ids);
+      setAlerts((prev) => prev.filter((a) => !ids.includes(a.id)));
+    }
+    setClearingAll(false);
   }
 
   async function dismiss(id: string) {
@@ -144,55 +155,68 @@ export function Alerts() {
     <div className="p-6 max-w-4xl mx-auto space-y-6">
 
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight flex items-center gap-2">
-            <Bell className="w-6 h-6 text-primary" />
-            Alerts
-            {unreadCount > 0 && (
-              <span className="text-sm font-semibold px-2 py-0.5 rounded-full bg-destructive text-white">
-                {unreadCount}
-              </span>
-            )}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Stock-outs, brand changes, price movements — detected automatically
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={load}
-            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-            title="Refresh"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => exportCSV("intel-alerts.csv", filtered.map(a => ({
-              Date: new Date(a.created_at).toLocaleDateString(),
-              Type: a.alert_type,
-              Severity: a.severity,
-              Title: a.title,
-              Body: a.body ?? "",
-              Brand: a.brand_name ?? "",
-              Product: a.product_name ?? "",
-            })))}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export
-          </button>
-          {unreadCount > 0 && (
+      <div>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight flex items-center gap-2">
+              <Bell className="w-6 h-6 text-primary" />
+              Alerts
+              {unreadCount > 0 && (
+                <span className="text-sm font-semibold px-2 py-0.5 rounded-full bg-destructive text-white">
+                  {unreadCount}
+                </span>
+              )}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Stock-outs, brand changes, price movements — detected automatically
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
             <button
-              onClick={markAllRead}
-              disabled={markingAll}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+              onClick={load}
+              className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              title="Refresh"
             >
-              <Check className="w-3.5 h-3.5" />
-              Mark all read
+              <RefreshCw className="w-4 h-4" />
             </button>
-          )}
+            <button
+              onClick={() => exportCSV("intel-alerts.csv", filtered.map(a => ({
+                Date: new Date(a.created_at).toLocaleDateString(),
+                Type: a.alert_type,
+                Severity: a.severity,
+                Title: a.title,
+                Body: a.body ?? "",
+                Brand: a.brand_name ?? "",
+                Product: a.product_name ?? "",
+              })))}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export
+            </button>
+            {unreadCount > 0 && (
+              <button
+                onClick={markAllRead}
+                disabled={markingAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+              >
+                <Check className="w-3.5 h-3.5" />
+                Mark all read
+              </button>
+            )}
+            {filtered.length > 0 && (
+              <button
+                onClick={clearAll}
+                disabled={clearingAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+                Clear All
+              </button>
+            )}
+          </div>
         </div>
+        <div className="header-underline mt-3" />
       </div>
 
       {/* Urgent banner */}

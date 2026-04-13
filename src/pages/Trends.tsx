@@ -617,7 +617,8 @@ export function Trends() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-xl font-semibold text-foreground tracking-tight">Trends</h1>
-          <p className="text-[12px] text-muted-foreground mt-0.5">
+          <div className="header-underline mt-1" />
+          <p className="text-[12px] text-muted-foreground mt-1">
             Week-over-week brand performance and distribution trends
           </p>
         </div>

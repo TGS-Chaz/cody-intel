@@ -56,33 +56,36 @@ function timeAgo(ts: string): string {
 
 // ── AnimatedCount ──────────────────────────────────────────────────────────────
 
-function AnimatedCount({ value, className }: { value: number; className?: string }) {
+function AnimatedCount({ value, delay = 0, suffix = "" }: { value: number; delay?: number; suffix?: string }) {
   const [display, setDisplay] = useState(0);
 
   useEffect(() => {
-    if (value === 0) { setDisplay(0); return; }
-    const duration = 1200;
-    const steps = 40;
-    const increment = value / steps;
-    let current = 0;
-    const timer = setInterval(() => {
-      current = Math.min(current + increment, value);
-      setDisplay(Math.round(current));
-      if (current >= value) clearInterval(timer);
-    }, duration / steps);
-    return () => clearInterval(timer);
-  }, [value]);
+    const timeout = setTimeout(() => {
+      if (value === 0) { setDisplay(0); return; }
+      const duration = 1000;
+      const steps = 40;
+      const increment = value / steps;
+      let current = 0;
+      const timer = setInterval(() => {
+        current = Math.min(current + increment, value);
+        setDisplay(Math.round(current));
+        if (current >= value) clearInterval(timer);
+      }, duration / steps);
+      return () => clearInterval(timer);
+    }, delay * 1000);
+    return () => clearTimeout(timeout);
+  }, [value, delay]);
 
-  return <span className={className}>{display.toLocaleString()}</span>;
+  return <>{display.toLocaleString()}{suffix}</>;
 }
 
 // ── Skeleton ───────────────────────────────────────────────────────────────────
 
 function HeroSkeleton() {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {[...Array(4)].map((_, i) => (
-        <div key={i} className="h-36 rounded-2xl skeleton-shimmer" />
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+      {[...Array(5)].map((_, i) => (
+        <div key={i} className="h-36 rounded-xl skeleton-shimmer" />
       ))}
     </div>
   );
@@ -99,54 +102,54 @@ const fadeUp = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.23, 1, 0.32, 1] as [number, number, number, number] } },
 };
 
-// ── KPI Card ───────────────────────────────────────────────────────────────────
+// ── KPI Card — matches CRM stat card style exactly ────────────────────────────
 
 interface KpiCardProps {
   icon: React.ElementType;
+  iconColor: string;
+  accentClass: string;
   label: string;
   value: number;
+  suffix?: string;
   subtitle: string;
-  glowColor: string;
-  index: number;
+  subtleIcon?: React.ElementType;
+  barWidth: string;
+  barColor: string;
+  delay: number;
+  onClick?: () => void;
 }
 
-function KpiCard({ icon: Icon, label, value, subtitle, glowColor, index }: KpiCardProps) {
+function KpiCard({
+  icon: Icon, iconColor, accentClass, label, value, suffix = "", subtitle,
+  barWidth, barColor, delay, onClick,
+}: KpiCardProps) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.1, duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-      className="relative overflow-hidden rounded-2xl p-6 flex flex-col"
-      style={{
-        background: "hsl(var(--card))",
-        border: "1px solid var(--glass-border)",
-        boxShadow: `0 0 40px ${glowColor}22`,
-      }}
+      transition={{ delay, duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+      whileHover={{ y: -3, transition: { type: "spring", stiffness: 300, damping: 20 } }}
+      onClick={onClick}
+      className={`relative rounded-xl border border-border bg-card p-5 overflow-hidden transition-all duration-200 hover:border-primary/20 hover:shadow-lg ${accentClass} ${onClick ? "cursor-pointer" : ""}`}
+      style={{ boxShadow: "inset 0 1px 0 var(--glass-bg)" }}
     >
-      {/* Background glow blob */}
-      <div
-        className="absolute -top-8 -right-8 w-32 h-32 rounded-full opacity-20 blur-2xl pointer-events-none"
-        style={{ background: glowColor }}
-      />
-
-      {/* Icon */}
-      <div
-        className="w-10 h-10 rounded-xl flex items-center justify-center mb-4 shrink-0"
-        style={{ background: `${glowColor}22` }}
-      >
-        <Icon className="w-5 h-5" style={{ color: glowColor }} />
-      </div>
-
-      {/* Label */}
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+      <Icon className="absolute right-3 top-3 w-14 h-14 opacity-[0.18]" style={{ color: iconColor }} />
+      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">
         {label}
       </p>
-
-      {/* Animated number */}
-      <AnimatedCount value={value} className="text-4xl font-black tabular-nums text-foreground" />
-
-      {/* Subtitle */}
+      <p className="text-[48px] font-extrabold leading-none text-foreground tabular-nums">
+        <AnimatedCount value={value} delay={delay} suffix={suffix} />
+      </p>
       <p className="text-[11px] text-muted-foreground mt-1">{subtitle}</p>
+      <div className="mt-3 h-[3px] rounded-full bg-border overflow-hidden">
+        <motion.div
+          className="h-full rounded-full"
+          style={{ background: barColor }}
+          initial={{ width: 0 }}
+          animate={{ width: barWidth }}
+          transition={{ delay: delay + 0.4, duration: 1, ease: [0.23, 1, 0.32, 1] }}
+        />
+      </div>
     </motion.div>
   );
 }
@@ -179,7 +182,8 @@ function SectionCard({
       <div className="flex items-start justify-between gap-2">
         <div>
           <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-          {subtitle && <p className="text-[10px] text-muted-foreground mt-0.5">{subtitle}</p>}
+          <div className="header-underline mt-1" />
+          {subtitle && <p className="text-[10px] text-muted-foreground mt-1">{subtitle}</p>}
         </div>
         {action}
       </div>
@@ -365,7 +369,6 @@ export function Dashboard() {
 
   // ── Computed values ────────────────────────────────────────────────────────
   const ownBrands = userBrands.filter((b) => b.is_own_brand);
-  const alertColor = (fast?.alertCount ?? 0) > 0 ? "#EF4444" : "#F59E0B";
   const maxBrandStores = heavy?.marketBrands[0]?.store_count ?? 1;
   const maxPresenceStores = heavy?.brandPresence[0]?.store_count ?? 1;
   const ownBrandNames = new Set(ownBrands.map((b) => b.brand_name.toLowerCase()));
@@ -374,58 +377,97 @@ export function Dashboard() {
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
 
       {/* ── Page header ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Intelligence Center</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Live market data across Washington state</p>
-        </div>
-        {fast?.freshness && (
-          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            Data updated {timeAgo(fast.freshness)}
+      <div>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">Intelligence Center</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">Live market data across Washington state</p>
           </div>
-        )}
+          {fast?.freshness && (
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              Data updated {timeAgo(fast.freshness)}
+            </div>
+          )}
+        </div>
+        <div className="header-underline mt-3" />
       </div>
 
       {/* ── Hero KPI row ─────────────────────────────────────────────────────── */}
       {fastLoading ? (
         <HeroSkeleton />
-      ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard
-            index={0}
-            icon={Store}
-            label="Stores Tracked"
-            value={fast?.totalStores ?? 0}
-            subtitle="Active dispensaries"
-            glowColor="#00D4AA"
-          />
-          <KpiCard
-            index={1}
-            icon={Package}
-            label="Products Monitored"
-            value={fast?.storesWithMenus ?? 0}
-            subtitle="Stores with live menu data"
-            glowColor="hsl(217, 91%, 60%)"
-          />
-          <KpiCard
-            index={2}
-            icon={TrendingUp}
-            label="Brand Presence"
-            value={heavy?.ownBrandStoreTotal ?? 0}
-            subtitle={ownBrands.length > 0 ? `Stores carrying your brands` : "Configure brands to track"}
-            glowColor="#A855F7"
-          />
-          <KpiCard
-            index={3}
-            icon={Bell}
-            label="Active Alerts"
-            value={fast?.alertCount ?? 0}
-            subtitle={fast?.alertCount ? "Require your attention" : "All clear"}
-            glowColor={alertColor}
-          />
-        </div>
-      )}
+      ) : (() => {
+        const totalStores = fast?.totalStores ?? 0;
+        const storesWithMenus = fast?.storesWithMenus ?? 0;
+        const coveragePct = totalStores > 0 ? Math.round((storesWithMenus / totalStores) * 100) : 0;
+        const ownBrandCount = ownBrands.length;
+        const alertCount = fast?.alertCount ?? 0;
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+            <KpiCard
+              icon={Store}
+              iconColor="hsl(168 100% 42%)"
+              accentClass="stat-accent-teal"
+              label="Total Stores"
+              value={totalStores}
+              subtitle="Active dispensaries"
+              barColor="hsl(168 100% 42%)"
+              barWidth={`${Math.min((totalStores / 500) * 100, 100)}%`}
+              delay={0.1}
+              onClick={() => navigate("/stores")}
+            />
+            <KpiCard
+              icon={Package}
+              iconColor="hsl(217 91% 60%)"
+              accentClass="stat-accent-blue"
+              label="Products Tracked"
+              value={storesWithMenus}
+              subtitle="Stores with live menus"
+              barColor="hsl(217 91% 60%)"
+              barWidth="80%"
+              delay={0.18}
+              onClick={() => navigate("/stores")}
+            />
+            <KpiCard
+              icon={TrendingUp}
+              iconColor="hsl(265 83% 76%)"
+              accentClass="stat-accent-amber"
+              label="Your Brands"
+              value={ownBrandCount}
+              subtitle={ownBrandCount > 0 ? "Brands being tracked" : "Set up in My Products"}
+              barColor="hsl(265 83% 76%)"
+              barWidth={`${Math.min(ownBrandCount * 20, 100)}%`}
+              delay={0.26}
+              onClick={() => navigate("/my-products")}
+            />
+            <KpiCard
+              icon={Bell}
+              iconColor={alertCount > 0 ? "hsl(0 84% 60%)" : "hsl(38 92% 55%)"}
+              accentClass=""
+              label="Active Alerts"
+              value={alertCount}
+              subtitle={alertCount > 0 ? "Require attention" : "All clear"}
+              barColor={alertCount > 0 ? "hsl(0 84% 60%)" : "hsl(38 92% 55%)"}
+              barWidth={`${Math.min(alertCount * 5, 100)}%`}
+              delay={0.34}
+              onClick={() => navigate("/alerts")}
+            />
+            <KpiCard
+              icon={BarChart2}
+              iconColor="hsl(160 84% 39%)"
+              accentClass="stat-accent-emerald"
+              label="Coverage"
+              value={coveragePct}
+              suffix="%"
+              subtitle="Stores with menu data"
+              barColor="hsl(160 84% 39%)"
+              barWidth={`${coveragePct}%`}
+              delay={0.42}
+              onClick={() => navigate("/reports")}
+            />
+          </div>
+        );
+      })()}
 
       {/* ── Brand Performance + Market Pulse ────────────────────────────────── */}
       <motion.div
