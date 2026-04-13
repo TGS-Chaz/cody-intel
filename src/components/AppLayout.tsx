@@ -26,7 +26,6 @@ import { useOrg } from "@/lib/org";
 import codyIcon from "@/assets/cody-icon.svg";
 import CodyGlow from "@/components/CodyGlow";
 import UserAvatar from "@/components/UserAvatar";
-import NotificationsCenter from "@/components/NotificationsCenter";
 
 const navItems = [
   { to: "/",          icon: LayoutDashboard, label: "Dashboard",  end: true },
@@ -214,7 +213,6 @@ export default function AppLayout() {
                   {user.email}
                 </span>
               </div>
-              <NotificationsCenter />
               <button
                 onClick={handleSignOut}
                 className="text-muted-foreground hover:text-destructive transition-colors shrink-0"

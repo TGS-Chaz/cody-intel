@@ -1,52 +1,47 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
+import { Store, Package, TrendingUp, Bell, Zap, AlertTriangle, Info, BarChart2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { isExcludedCategory, isExcludedBrand } from "@/lib/analytics-filters";
-import { Store, Wifi, TrendingUp, Database, Clock, Trophy } from "lucide-react";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie,
-} from "recharts";
+import { useOrg } from "@/lib/org";
+import { isExcludedBrand } from "@/lib/analytics-filters";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface FastStats {
   totalStores: number;
   storesWithMenus: number;
-  totalProducts: number;
-  platformCounts: Record<string, number>;
-  byCounty: { county: string; count: number }[];
+  alertCount: number;
+  topStores: { id: string; name: string; city: string; total_products: number | null; menu_last_updated: string | null }[];
+  recentAlerts: { id: string; title: string; severity: string; alert_type: string; brand_name: string | null; created_at: string }[];
   freshness: string | null;
-  recentActivity: { id: string; name: string; city: string; total_products: number; menu_last_updated: string }[];
-  topStores: { id: string; name: string; city: string; total_products: number }[];
+}
+
+interface UserBrand {
+  id: string;
+  brand_name: string;
+  is_own_brand: boolean;
+}
+
+interface BrandPresence {
+  brand_name: string;
+  store_count: number;
+}
+
+interface MarketBrand {
+  brand: string;
+  store_count: number;
+  product_count: number;
 }
 
 interface HeavyStats {
-  brands: { brand: string; store_count: number }[];
-  categories: { category: string; product_count: number }[];
-  prices: { category: string; avg: number; min: number; max: number }[];
+  brandPresence: BrandPresence[];
+  ownBrandStoreTotal: number;
+  marketBrands: MarketBrand[];
+  snapshotDate: string | null;
 }
 
-const PLATFORM_LABELS: Record<string, string> = {
-  "dutchie-api": "Dutchie",
-  leafly: "Leafly",
-  weedmaps: "Weedmaps",
-  "posabit-api": "POSaBit",
-  jane: "Jane",
-};
-
-const PLATFORM_COLORS: Record<string, string> = {
-  "dutchie-api": "#00D4AA",
-  leafly: "#3BB143",
-  weedmaps: "#F7931A",
-  "posabit-api": "#5C6BC0",
-  jane: "#E91E63",
-};
-
-const CAT_COLORS = [
-  "#A855F7", "#00D4AA", "#3BB143", "#5C6BC0", "#F7931A",
-  "#E91E63", "#00BCD4", "#FF5722", "#8BC34A", "#FFC107",
-  "#03A9F4", "#795548",
-];
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function timeAgo(ts: string): string {
   const diff = Date.now() - new Date(ts).getTime();
@@ -59,396 +54,566 @@ function timeAgo(ts: string): string {
   return `${days}d ago`;
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── AnimatedCount ──────────────────────────────────────────────────────────────
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  accent,
-  sub,
-}: {
+function AnimatedCount({ value, className }: { value: number; className?: string }) {
+  const [display, setDisplay] = useState(0);
+
+  useEffect(() => {
+    if (value === 0) { setDisplay(0); return; }
+    const duration = 1200;
+    const steps = 40;
+    const increment = value / steps;
+    let current = 0;
+    const timer = setInterval(() => {
+      current = Math.min(current + increment, value);
+      setDisplay(Math.round(current));
+      if (current >= value) clearInterval(timer);
+    }, duration / steps);
+    return () => clearInterval(timer);
+  }, [value]);
+
+  return <span className={className}>{display.toLocaleString()}</span>;
+}
+
+// ── Skeleton ───────────────────────────────────────────────────────────────────
+
+function HeroSkeleton() {
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="h-36 rounded-2xl skeleton-shimmer" />
+      ))}
+    </div>
+  );
+}
+
+// ── Stagger variants ───────────────────────────────────────────────────────────
+
+const staggerContainer = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.08 } },
+};
+const fadeUp = {
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.23, 1, 0.32, 1] as [number, number, number, number] } },
+};
+
+// ── KPI Card ───────────────────────────────────────────────────────────────────
+
+interface KpiCardProps {
   icon: React.ElementType;
   label: string;
-  value: string | number;
-  accent: string;
-  sub?: string;
+  value: number;
+  subtitle: string;
+  glowColor: string;
+  index: number;
+}
+
+function KpiCard({ icon: Icon, label, value, subtitle, glowColor, index }: KpiCardProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.1, duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+      className="relative overflow-hidden rounded-2xl p-6 flex flex-col"
+      style={{
+        background: "hsl(var(--card))",
+        border: "1px solid var(--glass-border)",
+        boxShadow: `0 0 40px ${glowColor}22`,
+      }}
+    >
+      {/* Background glow blob */}
+      <div
+        className="absolute -top-8 -right-8 w-32 h-32 rounded-full opacity-20 blur-2xl pointer-events-none"
+        style={{ background: glowColor }}
+      />
+
+      {/* Icon */}
+      <div
+        className="w-10 h-10 rounded-xl flex items-center justify-center mb-4 shrink-0"
+        style={{ background: `${glowColor}22` }}
+      >
+        <Icon className="w-5 h-5" style={{ color: glowColor }} />
+      </div>
+
+      {/* Label */}
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+        {label}
+      </p>
+
+      {/* Animated number */}
+      <AnimatedCount value={value} className="text-4xl font-black tabular-nums text-foreground" />
+
+      {/* Subtitle */}
+      <p className="text-[11px] text-muted-foreground mt-1">{subtitle}</p>
+    </motion.div>
+  );
+}
+
+// ── Section card shell ─────────────────────────────────────────────────────────
+
+function SectionCard({
+  title,
+  subtitle,
+  children,
+  loading,
+  action,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  loading?: boolean;
+  action?: React.ReactNode;
 }) {
   return (
-    <div className={`rounded-lg border border-border bg-card p-4 card-hover ${accent}`}>
-      <div className="flex items-center gap-2 mb-2">
-        <Icon className="w-3.5 h-3.5 text-muted-foreground" />
-        <p className="text-xs text-muted-foreground">{label}</p>
+    <motion.div
+      variants={fadeUp}
+      className="rounded-2xl p-5 flex flex-col gap-4"
+      style={{
+        background: "hsl(var(--card))",
+        border: "1px solid var(--glass-border)",
+        boxShadow: "0 4px 24px var(--shadow-color)",
+      }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          {subtitle && <p className="text-[10px] text-muted-foreground mt-0.5">{subtitle}</p>}
+        </div>
+        {action}
       </div>
-      <p className="text-2xl font-bold text-foreground font-mono-data">{value}</p>
-      {sub && <p className="text-[10px] text-muted-foreground mt-1">{sub}</p>}
-    </div>
-  );
-}
 
-function CardShell({ title, children, loading }: { title: string; children: React.ReactNode; loading?: boolean }) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-5 card-hover">
-      <h2 className="text-foreground mb-4">{title}</h2>
       {loading ? (
         <div className="space-y-2">
-          {[...Array(5)].map((_, i) => <div key={i} className="h-7 skeleton-shimmer rounded" />)}
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-7 skeleton-shimmer rounded-lg" />
+          ))}
         </div>
-      ) : children}
-    </div>
+      ) : (
+        children
+      )}
+    </motion.div>
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Alert severity helpers ─────────────────────────────────────────────────────
+
+function AlertIcon({ severity }: { severity: string }) {
+  if (severity === "urgent") return <Zap className="w-3.5 h-3.5 shrink-0 text-red-500" />;
+  if (severity === "warning") return <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-500" />;
+  if (severity === "info") return <Info className="w-3.5 h-3.5 shrink-0 text-blue-500" />;
+  return <Bell className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />;
+}
+
+function alertBorderColor(severity: string): string {
+  if (severity === "urgent") return "border-l-red-500";
+  if (severity === "warning") return "border-l-amber-500";
+  if (severity === "info") return "border-l-blue-500";
+  return "border-l-border";
+}
+
+// ── Main Dashboard ─────────────────────────────────────────────────────────────
 
 export function Dashboard() {
+  const navigate = useNavigate();
+  const { orgId } = useOrg();
+
   const [fast, setFast] = useState<FastStats | null>(null);
-  const [heavy, setHeavy] = useState<HeavyStats | null>(null);
   const [fastLoading, setFastLoading] = useState(true);
+
+  const [userBrands, setUserBrands] = useState<UserBrand[]>([]);
+  const [heavy, setHeavy] = useState<HeavyStats | null>(null);
   const [heavyLoading, setHeavyLoading] = useState(true);
 
   // ── Phase 1: fast queries ──────────────────────────────────────────────────
+  const loadFast = useCallback(async () => {
+    const [storesRes, storesWithMenuRes, alertsRes, topStoresRes, recentAlertsRes] = await Promise.all([
+      supabase.from("intel_stores").select("id", { count: "exact", head: true }),
+      supabase.from("intel_stores").select("id", { count: "exact", head: true }).not("total_products", "is", null).gt("total_products", 0),
+      supabase.from("intel_alerts").select("id", { count: "exact", head: true }).eq("is_read", false),
+      supabase.from("intel_stores").select("id, name, city, total_products, menu_last_updated").order("total_products", { ascending: false }).limit(5),
+      supabase.from("intel_alerts").select("id, title, severity, alert_type, brand_name, created_at").order("created_at", { ascending: false }).limit(8),
+    ]);
+
+    // Also fetch user_brands and freshness
+    const [brandsRes, freshRes] = await Promise.all([
+      orgId
+        ? supabase.from("user_brands").select("id, brand_name, is_own_brand").eq("org_id", orgId)
+        : Promise.resolve({ data: [] as UserBrand[], error: null }),
+      supabase.from("intel_stores").select("menu_last_updated").not("menu_last_updated", "is", null).order("menu_last_updated", { ascending: false }).limit(1),
+    ]);
+
+    setUserBrands((brandsRes.data as UserBrand[]) ?? []);
+
+    setFast({
+      totalStores: storesRes.count ?? 0,
+      storesWithMenus: storesWithMenuRes.count ?? 0,
+      alertCount: alertsRes.count ?? 0,
+      topStores: (topStoresRes.data ?? []) as FastStats["topStores"],
+      recentAlerts: (recentAlertsRes.data ?? []) as FastStats["recentAlerts"],
+      freshness: (freshRes.data?.[0]?.menu_last_updated as string | null) ?? null,
+    });
+    setFastLoading(false);
+  }, [orgId]);
+
+  useEffect(() => { loadFast(); }, [loadFast]);
+
+  // ── Phase 2: heavy queries ─────────────────────────────────────────────────
   useEffect(() => {
-    async function loadFast() {
-      const [storesRes, menusRes, recentRes, topRes, freshRes] = await Promise.all([
-        supabase.from("intel_stores").select("id, county, total_products").eq("status", "active"),
-        supabase.from("dispensary_menus").select("intel_store_id, source, menu_item_count").not("intel_store_id", "is", null),
-        supabase.from("intel_stores").select("id, name, city, total_products, menu_last_updated").not("menu_last_updated", "is", null).order("menu_last_updated", { ascending: false }).limit(10),
-        supabase.from("intel_stores").select("id, name, city, total_products").gt("total_products", 0).order("total_products", { ascending: false }).limit(10),
-        supabase.from("dispensary_menus").select("last_scraped_at").not("last_scraped_at", "is", null).order("last_scraped_at", { ascending: false }).limit(1),
-      ]);
+    if (fastLoading) return; // wait for fast
 
-      const stores = storesRes.data ?? [];
-      const menus = menusRes.data ?? [];
-      const storesWithMenus = new Set(menus.map((m) => m.intel_store_id)).size;
-      const totalProducts = menus.reduce((s, m) => s + (m.menu_item_count ?? 0), 0);
-
-      const platformCounts: Record<string, number> = {};
-      for (const m of menus) platformCounts[m.source] = (platformCounts[m.source] ?? 0) + 1;
-
-      const countyMap: Record<string, number> = {};
-      for (const s of stores) {
-        if (s.county) countyMap[s.county] = (countyMap[s.county] ?? 0) + 1;
-      }
-      const byCounty = Object.entries(countyMap)
-        .map(([county, count]) => ({ county, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 10);
-
-      setFast({
-        totalStores: stores.length,
-        storesWithMenus,
-        totalProducts,
-        platformCounts,
-        byCounty,
-        freshness: freshRes.data?.[0]?.last_scraped_at ?? null,
-        recentActivity: (recentRes.data ?? []) as FastStats["recentActivity"],
-        topStores: (topRes.data ?? []) as FastStats["topStores"],
-      });
-      setFastLoading(false);
-    }
-    loadFast();
-  }, []);
-
-  // ── Phase 2: heavy queries (menu_items) ────────────────────────────────────
-  useEffect(() => {
     async function loadHeavy() {
+      setHeavyLoading(true);
+
+      // Get all menu IDs + store mapping for market pulse
       const { data: menus } = await supabase
         .from("dispensary_menus")
         .select("id, intel_store_id")
         .not("intel_store_id", "is", null);
-      if (!menus?.length) { setHeavyLoading(false); return; }
 
       const menuToStore: Record<string, string> = {};
-      const validIds: string[] = [];
-      for (const m of menus) { menuToStore[m.id] = m.intel_store_id; validIds.push(m.id); }
+      const validMenuIds: string[] = [];
+      for (const m of menus ?? []) {
+        menuToStore[m.id] = m.intel_store_id;
+        validMenuIds.push(m.id);
+      }
 
+      // Chunked menu_items load (chunks of 400 menu IDs)
       const CHUNK = 400;
-      const allItems: { raw_brand: string | null; raw_category: string | null; raw_price: number | null; dispensary_menu_id: string }[] = [];
-      for (let i = 0; i < validIds.length; i += CHUNK) {
+      const allItems: { raw_brand: string | null; dispensary_menu_id: string }[] = [];
+      for (let i = 0; i < validMenuIds.length; i += CHUNK) {
         const { data } = await supabase
           .from("menu_items")
-          .select("raw_brand, raw_category, raw_price, dispensary_menu_id")
+          .select("raw_brand, dispensary_menu_id")
           .eq("is_on_menu", true)
-          .in("dispensary_menu_id", validIds.slice(i, i + CHUNK));
+          .in("dispensary_menu_id", validMenuIds.slice(i, i + CHUNK));
         if (data) allItems.push(...data);
       }
 
-      // Brands aggregation
-      const brandAgg: Record<string, Set<string>> = {};
+      // Brand → stores aggregation (for market pulse)
+      const brandStores: Record<string, Set<string>> = {};
+      const brandProducts: Record<string, number> = {};
       for (const item of allItems) {
-        const b = item.raw_brand;
+        const b = item.raw_brand?.trim();
         if (!b || isExcludedBrand(b)) continue;
-        if (!brandAgg[b]) brandAgg[b] = new Set();
-        const storeId = menuToStore[item.dispensary_menu_id];
-        if (storeId) brandAgg[b].add(storeId);
+        if (!brandStores[b]) { brandStores[b] = new Set(); brandProducts[b] = 0; }
+        const sid = menuToStore[item.dispensary_menu_id];
+        if (sid) brandStores[b].add(sid);
+        brandProducts[b]++;
       }
-      const brands = Object.entries(brandAgg)
-        .map(([brand, stores]) => ({ brand, store_count: stores.size }))
+      const marketBrands: MarketBrand[] = Object.entries(brandStores)
+        .map(([brand, stores]) => ({ brand, store_count: stores.size, product_count: brandProducts[brand] }))
         .sort((a, b) => b.store_count - a.store_count)
-        .slice(0, 10);
-
-      // Category aggregation
-      const catAgg: Record<string, { count: number; prices: number[] }> = {};
-      for (const item of allItems) {
-        const cat = item.raw_category;
-        if (!cat || isExcludedCategory(cat)) continue;
-        if (!catAgg[cat]) catAgg[cat] = { count: 0, prices: [] };
-        catAgg[cat].count++;
-        if (item.raw_price != null && item.raw_price > 0) catAgg[cat].prices.push(item.raw_price);
-      }
-      const categories = Object.entries(catAgg)
-        .map(([category, { count }]) => ({ category, product_count: count }))
-        .sort((a, b) => b.product_count - a.product_count)
-        .slice(0, 10);
-
-      const prices = Object.entries(catAgg)
-        .filter(([, { prices: p }]) => p.length > 0)
-        .map(([category, { prices: p }]) => ({
-          category,
-          avg: p.reduce((s, v) => s + v, 0) / p.length,
-          min: Math.min(...p),
-          max: Math.max(...p),
-        }))
-        .sort((a, b) => b.avg - a.avg)
         .slice(0, 8);
 
-      setHeavy({ brands, categories, prices });
+      // Brand presence: for each own brand, count distinct stores via menu_items
+      const ownBrands = userBrands.filter((b) => b.is_own_brand);
+      let brandPresence: BrandPresence[] = [];
+      let ownBrandStoreTotal = 0;
+
+      if (ownBrands.length > 0 && validMenuIds.length > 0) {
+        const presenceResults = await Promise.all(
+          ownBrands.map(async (b) => {
+            // Count menu_items where raw_brand ILIKE brand_name
+            // Use chunked queries so we don't pass too many IDs at once
+            const storeSet = new Set<string>();
+            for (let i = 0; i < validMenuIds.length; i += CHUNK) {
+              const { data } = await supabase
+                .from("menu_items")
+                .select("dispensary_menu_id")
+                .ilike("raw_brand", b.brand_name)
+                .eq("is_on_menu", true)
+                .in("dispensary_menu_id", validMenuIds.slice(i, i + CHUNK));
+              for (const row of data ?? []) {
+                const sid = menuToStore[row.dispensary_menu_id];
+                if (sid) storeSet.add(sid);
+              }
+            }
+            return { brand_name: b.brand_name, store_count: storeSet.size };
+          })
+        );
+        brandPresence = presenceResults.sort((a, b) => b.store_count - a.store_count);
+        // Total unique stores carrying any own brand
+        const allOwnStores = new Set<string>();
+        for (const item of allItems) {
+          const b = item.raw_brand?.trim().toLowerCase();
+          if (!b) continue;
+          const match = ownBrands.find((ob) => ob.brand_name.toLowerCase() === b);
+          if (match) {
+            const sid = menuToStore[item.dispensary_menu_id];
+            if (sid) allOwnStores.add(sid);
+          }
+        }
+        ownBrandStoreTotal = allOwnStores.size;
+      }
+
+      // Snapshot date from daily_brand_metrics
+      const { data: snapData } = await supabase
+        .from("daily_brand_metrics")
+        .select("date")
+        .order("date", { ascending: false })
+        .limit(1);
+      const snapshotDate: string | null = snapData?.[0]?.date ?? null;
+
+      setHeavy({ brandPresence, ownBrandStoreTotal, marketBrands, snapshotDate });
       setHeavyLoading(false);
     }
-    loadHeavy();
-  }, []);
 
-  const coverage = fast ? Math.round((fast.storesWithMenus / fast.totalStores) * 100) : 0;
+    loadHeavy();
+  }, [fastLoading, userBrands]);
+
+  // ── Computed values ────────────────────────────────────────────────────────
+  const ownBrands = userBrands.filter((b) => b.is_own_brand);
+  const alertColor = (fast?.alertCount ?? 0) > 0 ? "#EF4444" : "#F59E0B";
+  const maxBrandStores = heavy?.marketBrands[0]?.store_count ?? 1;
+  const maxPresenceStores = heavy?.brandPresence[0]?.store_count ?? 1;
+  const ownBrandNames = new Set(ownBrands.map((b) => b.brand_name.toLowerCase()));
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6 animate-fade-up">
-      {/* Header */}
-      <div className="flex items-start justify-between">
+    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+
+      {/* ── Page header ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-foreground">Market Overview</h1>
-          <div className="header-underline mt-1" />
-          <p className="text-sm text-muted-foreground mt-1">
-            Washington State cannabis market intelligence
-          </p>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Intelligence Center</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Live market data across Washington state</p>
         </div>
         {fast?.freshness && (
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-1">
-            <Clock className="w-3 h-3" />
-            <span>Updated {timeAgo(fast.freshness)}</span>
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            Data updated {timeAgo(fast.freshness)}
           </div>
         )}
       </div>
 
-      {/* ── Stat cards ── */}
+      {/* ── Hero KPI row ─────────────────────────────────────────────────────── */}
       {fastLoading ? (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="rounded-lg border border-border bg-card p-4 h-24 skeleton-shimmer" />
-          ))}
-        </div>
+        <HeroSkeleton />
       ) : (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatCard icon={Store}     label="Active Stores"   value={fast?.totalStores ?? 0}  accent="stat-accent-teal" />
-          <StatCard icon={Wifi}      label="With Menu Data"  value={fast?.storesWithMenus ?? 0} accent="stat-accent-blue" />
-          <StatCard icon={TrendingUp} label="Market Coverage" value={`${coverage}%`}           accent="stat-accent-amber"
-            sub={`${458 - (fast?.storesWithMenus ?? 0)} stores without data`} />
-          <StatCard icon={Database}  label="Total Products"  value={(fast?.totalProducts ?? 0).toLocaleString()} accent="stat-accent-emerald" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KpiCard
+            index={0}
+            icon={Store}
+            label="Stores Tracked"
+            value={fast?.totalStores ?? 0}
+            subtitle="Active dispensaries"
+            glowColor="#00D4AA"
+          />
+          <KpiCard
+            index={1}
+            icon={Package}
+            label="Products Monitored"
+            value={fast?.storesWithMenus ?? 0}
+            subtitle="Stores with live menu data"
+            glowColor="hsl(217, 91%, 60%)"
+          />
+          <KpiCard
+            index={2}
+            icon={TrendingUp}
+            label="Brand Presence"
+            value={heavy?.ownBrandStoreTotal ?? 0}
+            subtitle={ownBrands.length > 0 ? `Stores carrying your brands` : "Configure brands to track"}
+            glowColor="#A855F7"
+          />
+          <KpiCard
+            index={3}
+            icon={Bell}
+            label="Active Alerts"
+            value={fast?.alertCount ?? 0}
+            subtitle={fast?.alertCount ? "Require your attention" : "All clear"}
+            glowColor={alertColor}
+          />
         </div>
       )}
 
-      {/* ── Recent Activity + Top Stores ── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <CardShell title="Recent Activity" loading={fastLoading}>
-          <div className="space-y-1.5">
-            {fast?.recentActivity.map((s) => (
-              <div key={s.id} className="flex items-center justify-between py-1">
-                <div className="min-w-0">
-                  <p className="text-[12px] font-medium text-foreground truncate">{s.name}</p>
-                  <p className="text-[10px] text-muted-foreground">{s.city}</p>
-                </div>
-                <div className="text-right shrink-0 ml-3">
-                  <p className="text-[11px] font-mono-data text-foreground">{s.total_products.toLocaleString()}</p>
-                  <p className="text-[10px] text-muted-foreground">{timeAgo(s.menu_last_updated)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardShell>
-
-        <CardShell title="Top Stores by Menu Size" loading={fastLoading}>
-          <div className="space-y-1.5">
-            {fast?.topStores.map((s, i) => (
-              <div key={s.id} className="flex items-center gap-2.5 py-0.5">
-                <span className="text-[10px] font-mono-data text-muted-foreground/60 w-4 shrink-0">{i + 1}</span>
-                <Trophy className={`w-3 h-3 shrink-0 ${i === 0 ? "text-amber-400" : i === 1 ? "text-slate-400" : i === 2 ? "text-amber-700" : "text-transparent"}`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-medium text-foreground truncate">{s.name}</p>
-                  <p className="text-[10px] text-muted-foreground">{s.city}</p>
-                </div>
-                <span className="font-mono-data text-xs text-muted-foreground shrink-0">
-                  {s.total_products.toLocaleString()}
-                </span>
-              </div>
-            ))}
-          </div>
-        </CardShell>
-      </div>
-
-      {/* ── Trending Brands + Category Distribution ── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Trending Brands bar chart */}
-        <div className="rounded-lg border border-border bg-card p-5 card-hover">
-          <h2 className="text-foreground mb-4">Trending Brands</h2>
-          {heavyLoading ? (
-            <div className="h-[220px] skeleton-shimmer rounded" />
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart
-                data={heavy?.brands.map((b) => ({
-                  name: b.brand.length > 18 ? b.brand.slice(0, 18) + "…" : b.brand,
-                  stores: b.store_count,
-                }))}
-                layout="vertical"
-                margin={{ left: 0, right: 24, top: 0, bottom: 0 }}
+      {/* ── Brand Performance + Market Pulse ────────────────────────────────── */}
+      <motion.div
+        className="grid grid-cols-1 lg:grid-cols-2 gap-4"
+        initial="hidden"
+        animate="visible"
+        variants={staggerContainer}
+      >
+        {/* Your Brand Performance */}
+        <SectionCard
+          title="Your Brand Performance"
+          subtitle={heavy?.snapshotDate ? `Live data` : undefined}
+          loading={heavyLoading}
+        >
+          {ownBrands.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 text-center gap-3">
+              <Package className="w-10 h-10 text-muted-foreground/30" />
+              <p className="text-sm font-medium text-muted-foreground">No brands configured yet</p>
+              <p className="text-xs text-muted-foreground/70">
+                Add your brands in My Products to track performance
+              </p>
+              <button
+                onClick={() => navigate("/my-products")}
+                className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors mt-1"
               >
-                <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 10, fill: "hsl(var(--foreground))" }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-                  cursor={{ fill: "hsl(var(--accent) / 0.4)" }}
-                  formatter={(v) => [v, "Stores"]}
-                />
-                <Bar dataKey="stores" radius={[0, 4, 4, 0]}>
-                  {(heavy?.brands ?? []).map((_, idx) => (
-                    <Cell key={idx} fill="#A855F7" fillOpacity={1 - idx * 0.06} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        {/* Category Distribution donut */}
-        <div className="rounded-lg border border-border bg-card p-5 card-hover">
-          <h2 className="text-foreground mb-4">Category Distribution</h2>
-          {heavyLoading ? (
-            <div className="h-[220px] skeleton-shimmer rounded" />
+                Set Up My Brands
+              </button>
+            </div>
           ) : (
-            <div className="flex items-center gap-4">
-              <ResponsiveContainer width={180} height={180}>
-                <PieChart>
-                  <Pie
-                    data={heavy?.categories.map((c, i) => ({
-                      name: c.category,
-                      value: c.product_count,
-                      color: CAT_COLORS[i % CAT_COLORS.length],
-                    }))}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
-                    dataKey="value"
-                    strokeWidth={0}
-                  >
-                    {(heavy?.categories ?? []).map((_, i) => (
-                      <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-                    formatter={(v) => [Number(v).toLocaleString(), "Products"]}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex-1 space-y-1.5 overflow-hidden">
-                {heavy?.categories.slice(0, 8).map((c, i) => {
-                  const total = heavy.categories.reduce((s, x) => s + x.product_count, 0);
-                  const pct = Math.round((c.product_count / total) * 100);
-                  return (
-                    <div key={c.category} className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: CAT_COLORS[i % CAT_COLORS.length] }} />
-                      <span className="text-[11px] text-foreground truncate flex-1">{c.category}</span>
-                      <span className="text-[11px] font-mono-data text-muted-foreground shrink-0">{pct}%</span>
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="space-y-1">
+              {heavy?.brandPresence.map((bp) => (
+                <div key={bp.brand_name} className="flex items-center gap-3 py-2">
+                  <p className="text-[12px] font-medium text-foreground w-32 shrink-0 truncate">
+                    {bp.brand_name}
+                  </p>
+                  <div className="flex-1 bg-secondary rounded-full h-1.5 overflow-hidden">
+                    <motion.div
+                      className="h-full rounded-full"
+                      style={{ background: "#00D4AA" }}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.round((bp.store_count / maxPresenceStores) * 100)}%` }}
+                      transition={{ duration: 0.8, ease: [0.23, 1, 0.32, 1] }}
+                    />
+                  </div>
+                  <span className="text-[11px] font-semibold tabular-nums text-foreground/80 w-16 text-right shrink-0">
+                    {bp.store_count} stores
+                  </span>
+                </div>
+              ))}
+              {heavy && (
+                <p className="text-[10px] text-muted-foreground mt-3 pt-2 border-t border-border/50">
+                  {heavy.ownBrandStoreTotal.toLocaleString()} total stores carry your brands across{" "}
+                  {ownBrands.length} brand{ownBrands.length !== 1 ? "s" : ""}
+                </p>
+              )}
             </div>
           )}
-        </div>
-      </div>
+        </SectionCard>
 
-      {/* ── Price Insights ── */}
-      <div className="rounded-lg border border-border bg-card p-5 card-hover">
-        <h2 className="text-foreground mb-4">Price Insights</h2>
-        {heavyLoading ? (
-          <div className="space-y-2">
-            {[...Array(5)].map((_, i) => <div key={i} className="h-8 skeleton-shimmer rounded" />)}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr style={{ borderBottom: "1px solid var(--glass-border)" }}>
-                  {["Category", "Avg Price", "Min", "Max"].map((h) => (
-                    <th key={h} className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/40">
-                {heavy?.prices.map((p) => (
-                  <tr key={p.category} className="hover:bg-accent/30 transition-colors">
-                    <td className="px-3 py-2 font-medium text-foreground">{p.category}</td>
-                    <td className="px-3 py-2 font-mono-data text-xs text-foreground">${p.avg.toFixed(2)}</td>
-                    <td className="px-3 py-2 font-mono-data text-xs text-muted-foreground">${p.min.toFixed(2)}</td>
-                    <td className="px-3 py-2 font-mono-data text-xs text-muted-foreground">${p.max.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* ── Platform Coverage + Counties ── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <CardShell title="Platform Coverage" loading={fastLoading}>
-          <div className="space-y-3">
-            {Object.entries(fast?.platformCounts ?? {}).map(([source, count]) => {
-              const pct = Math.round((count / (fast?.totalStores ?? 1)) * 100);
-              const color = PLATFORM_COLORS[source] ?? "#A855F7";
+        {/* Market Pulse */}
+        <SectionCard
+          title="Market Pulse"
+          subtitle={
+            heavy?.snapshotDate
+              ? `Live Market • Updated ${timeAgo(heavy.snapshotDate)}`
+              : "Top brands by store presence"
+          }
+          loading={heavyLoading}
+        >
+          <div className="space-y-1">
+            {heavy?.marketBrands.map((mb, i) => {
+              const isOwn = ownBrandNames.has(mb.brand.toLowerCase());
               return (
-                <div key={source} className="flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground w-20 shrink-0">{PLATFORM_LABELS[source] ?? source}</span>
-                  <div className="flex-1 bg-secondary rounded-full h-1.5 overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
+                <div
+                  key={mb.brand}
+                  className={`flex items-center gap-3 py-2 px-2 rounded-lg transition-colors ${
+                    isOwn
+                      ? "bg-teal-500/10"
+                      : "hover:bg-accent/30"
+                  }`}
+                >
+                  <span className="text-[10px] font-bold text-muted-foreground/50 w-4 shrink-0">
+                    {i + 1}
+                  </span>
+                  <p
+                    className={`text-[12px] font-medium flex-1 min-w-0 truncate ${
+                      isOwn ? "text-teal-500" : "text-foreground"
+                    }`}
+                  >
+                    {mb.brand}
+                  </p>
+                  <div className="w-20 bg-secondary rounded-full h-1 overflow-hidden shrink-0">
+                    <motion.div
+                      className="h-full rounded-full"
+                      style={{ background: isOwn ? "#00D4AA" : "#A855F7" }}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.round((mb.store_count / maxBrandStores) * 100)}%` }}
+                      transition={{ duration: 0.8, delay: i * 0.05, ease: [0.23, 1, 0.32, 1] }}
+                    />
                   </div>
-                  <span className="text-xs font-mono-data text-foreground w-16 text-right">
-                    {count} <span className="text-muted-foreground">({pct}%)</span>
+                  <span className="text-[11px] tabular-nums text-muted-foreground w-14 text-right shrink-0">
+                    {mb.store_count} stores
                   </span>
                 </div>
               );
             })}
+            {(!heavy?.marketBrands || heavy.marketBrands.length === 0) && !heavyLoading && (
+              <div className="flex flex-col items-center justify-center h-32 gap-2">
+                <BarChart2 className="w-8 h-8 text-muted-foreground/30" />
+                <p className="text-xs text-muted-foreground">No market data available yet</p>
+              </div>
+            )}
           </div>
-        </CardShell>
+        </SectionCard>
+      </motion.div>
 
-        <CardShell title="Stores by County" loading={fastLoading}>
-          <div className="space-y-2">
-            {fast?.byCounty.map(({ county, count }, i) => (
-              <div key={county} className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono-data text-muted-foreground/60 w-4">{i + 1}</span>
-                  <span className="text-muted-foreground capitalize">{county?.toLowerCase() ?? "Unknown"}</span>
+      {/* ── Top Stores + Recent Alerts ───────────────────────────────────────── */}
+      <motion.div
+        className="grid grid-cols-1 lg:grid-cols-2 gap-4"
+        initial="hidden"
+        animate="visible"
+        variants={{ ...staggerContainer, visible: { transition: { staggerChildren: 0.08, delayChildren: 0.2 } } }}
+      >
+        {/* Top Stores */}
+        <SectionCard title="Top Stores" subtitle="By product count" loading={fastLoading}>
+          <div className="divide-y divide-border/40">
+            {fast?.topStores.map((store, i) => (
+              <div key={store.id} className="flex items-center gap-3 py-2.5 last:pb-0 first:pt-0">
+                <span className="text-[11px] font-bold text-muted-foreground/50 w-4 shrink-0">{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-medium text-foreground truncate">{store.name}</p>
+                  <p className="text-[10px] text-muted-foreground">{store.city}</p>
                 </div>
-                <span className="font-medium font-mono-data text-foreground">{count}</span>
+                <span className="text-[11px] font-semibold tabular-nums text-foreground/80 shrink-0">
+                  {store.total_products?.toLocaleString() ?? "—"}
+                </span>
               </div>
             ))}
+            {(!fast?.topStores || fast.topStores.length === 0) && (
+              <p className="text-xs text-muted-foreground py-8 text-center">No store data available</p>
+            )}
           </div>
-        </CardShell>
-      </div>
+        </SectionCard>
+
+        {/* Recent Alerts */}
+        <SectionCard
+          title="Recent Alerts"
+          subtitle={fast?.alertCount ? `${fast.alertCount} unread` : "All clear"}
+          loading={fastLoading}
+          action={
+            <button
+              onClick={() => navigate("/alerts")}
+              className="text-[10px] font-medium text-primary hover:text-primary/80 transition-colors"
+            >
+              View All
+            </button>
+          }
+        >
+          {(!fast?.recentAlerts || fast.recentAlerts.length === 0) ? (
+            <div className="flex flex-col items-center justify-center h-32 gap-2">
+              <Bell className="w-8 h-8 text-muted-foreground/30" />
+              <p className="text-xs text-muted-foreground">No alerts — everything looks good</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {fast.recentAlerts.map((alert) => (
+                <div
+                  key={alert.id}
+                  className={`flex items-start gap-2.5 py-2 px-2 rounded-lg border-l-2 ${alertBorderColor(alert.severity)} bg-transparent hover:bg-accent/20 transition-colors`}
+                >
+                  <div className="mt-0.5 shrink-0">
+                    <AlertIcon severity={alert.severity} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-medium text-foreground truncate">{alert.title}</p>
+                    {alert.brand_name && (
+                      <p className="text-[10px] text-muted-foreground truncate">{alert.brand_name}</p>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">
+                    {timeAgo(alert.created_at)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      </motion.div>
     </div>
   );
 }
