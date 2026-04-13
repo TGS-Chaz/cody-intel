@@ -56,7 +56,7 @@ interface StoreLeaderRow {
   platform_count: number;
 }
 
-type TabId = "brands" | "categories" | "coverage" | "prices" | "leaderboard" | "distribution" | "gap" | "saturation" | "velocity" | "custom";
+type TabId = "brands" | "categories" | "coverage" | "prices" | "leaderboard" | "distribution" | "gap" | "saturation" | "velocity" | "custom" | "deals";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1537,6 +1537,144 @@ function GapAnalysis() {
   );
 }
 
+// ── Deals Report ─────────────────────────────────────────────────────────────
+
+function DealsReport() {
+  const [deals, setDeals] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const { data: dealsData } = await supabase
+        .from("store_deals")
+        .select("*, intel_store:intel_store_id(name, city)")
+        .order("scraped_at", { ascending: false })
+        .limit(100);
+      setDeals((dealsData ?? []) as any[]);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  const [priceAlerts, setPriceAlerts] = useState<any[]>([]);
+  useEffect(() => {
+    supabase.from("intel_alerts")
+      .select("*")
+      .eq("alert_type", "price_change")
+      .order("created_at", { ascending: false })
+      .limit(50)
+      .then(({ data }) => setPriceAlerts((data ?? []) as any[]));
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      {/* Coming soon banner */}
+      <div
+        className="rounded-xl border p-5 flex items-start gap-3"
+        style={{ background: "hsl(168 100% 42% / 0.05)", borderColor: "hsl(168 100% 42% / 0.2)" }}
+      >
+        <Tag className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-foreground">Deal Scraping — Active Tracking</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Deal data is extracted automatically during each menu scrape. Promotions from Dutchie menus
+            appear here within 24 hours. Currently using price change alerts as real-time proxy.
+          </p>
+        </div>
+      </div>
+
+      {/* Price change alerts as deal proxy */}
+      <div>
+        <h2 className="text-sm font-semibold text-foreground mb-1">Recent Price Changes</h2>
+        <div className="header-underline mb-3" />
+        <p className="text-xs text-muted-foreground mb-3">
+          Products where price moved ≥10% — potential promotions or price adjustments
+        </p>
+        {loading ? (
+          <Skeleton rows={6} />
+        ) : priceAlerts.length === 0 ? (
+          <div className="text-center py-10 text-muted-foreground text-sm">
+            No significant price changes detected in recent data.
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-sidebar">
+                  <th className={thCls}>Product</th>
+                  <th className={thCls}>Brand</th>
+                  <th className={thCls}>Change</th>
+                  <th className={thCls}>When</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40">
+                {priceAlerts.map((a) => {
+                  const det = (a.details ?? {}) as Record<string, any>;
+                  const pct = det.pct_change as number | undefined;
+                  const isDown = (pct ?? 0) < 0;
+                  return (
+                    <tr key={a.id} className="hover:bg-accent/20">
+                      <td className="px-4 py-2.5 font-medium text-foreground">
+                        {a.product_name ?? det.product ?? "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-muted-foreground">{a.brand_name ?? "—"}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`font-semibold ${isDown ? "text-green-500" : "text-red-400"}`}>
+                          {pct != null ? `${pct > 0 ? "+" : ""}${pct}%` : "—"}
+                          {det.old_price != null && det.new_price != null && (
+                            <span className="text-muted-foreground font-normal ml-1.5">
+                              ${Number(det.old_price).toFixed(2)} → ${Number(det.new_price).toFixed(2)}
+                            </span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-muted-foreground">
+                        {new Date(a.created_at).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Actual deals section — only shown when data exists */}
+      {deals.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-foreground mb-1">Active Promotions</h2>
+          <div className="header-underline mb-3" />
+          <div className="space-y-2">
+            {deals.map((d) => (
+              <div key={d.id} className="rounded-lg border border-border bg-card p-4 flex items-start gap-3">
+                <Tag className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground">{d.product_name ?? d.brand_name}</p>
+                  <p className="text-xs text-muted-foreground">{d.deal_description}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-bold text-green-500">
+                    {d.discount_pct ? `-${d.discount_pct}%` : `$${d.deal_price}`}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">{d.intel_store?.name}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="text-center py-6">
+        <p className="text-xs text-muted-foreground">
+          Deals are scraped automatically from Dutchie and Leafly menus during each scheduled run.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Reports page ─────────────────────────────────────────────────────────
 
 
@@ -1559,6 +1697,7 @@ const TAB_GROUPS = [
       { id: "saturation" as TabId, label: "Market Saturation", icon: Globe     },
       { id: "velocity"   as TabId, label: "Sell-Through",      icon: Zap       },
       { id: "custom"     as TabId, label: "Report Builder",    icon: Settings2 },
+      { id: "deals"      as TabId, label: "Deals",             icon: Tag       },
     ],
   },
 ];
@@ -1620,6 +1759,7 @@ export function Reports() {
       <div className={tab === "saturation"   ? "" : "hidden"}>{visited.has("saturation")   && <SaturationAnalysis />}</div>
       <div className={tab === "velocity"     ? "" : "hidden"}>{visited.has("velocity")     && <SellThrough />}</div>
       <div className={tab === "custom"       ? "" : "hidden"}>{visited.has("custom")       && <CustomReportBuilder />}</div>
+      <div className={tab === "deals"        ? "" : "hidden"}>{visited.has("deals")        && <DealsReport />}</div>
     </div>
   );
 }
