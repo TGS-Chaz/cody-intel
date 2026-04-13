@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { isExcludedCategory, isExcludedBrand } from "@/lib/analytics-filters";
-import { BarChart2, Package, Tag, Wifi, Search, Trophy, DollarSign, LayoutList, Target } from "lucide-react";
+import { exportCSV } from "@/lib/export-csv";
+import { BarChart2, Package, Tag, Wifi, Search, Trophy, DollarSign, LayoutList, Target, Download } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
@@ -145,10 +146,19 @@ function BrandReport() {
 
   return (
     <div className="space-y-3">
-      <div className="relative max-w-xs">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter brands…"
-          className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+      <div className="flex items-center justify-between gap-3">
+        <div className="relative max-w-xs flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter brands…"
+            className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+        </div>
+        <button
+          onClick={() => exportCSV("brands.csv", filtered.map(r => ({ Brand: r.brand, Stores: r.store_count, Products: r.total_products, Avg_Price: r.avg_price?.toFixed(2) ?? "" })))}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Export CSV
+        </button>
       </div>
       <div className="rounded-lg border border-border bg-card overflow-hidden shadow-premium">
         <table className="w-full text-sm">
@@ -244,7 +254,16 @@ function CategoryReport() {
   return (
     <div className="space-y-5">
       <div className="rounded-lg border border-border bg-card p-4 shadow-premium">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">Products by Category</p>
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Products by Category</p>
+          <button
+            onClick={() => exportCSV("categories.csv", rows.map(r => ({ Category: r.category, Products: r.product_count, Stores: r.store_count, Avg_Price: r.avg_price?.toFixed(2) ?? "" })))}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </button>
+        </div>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={chartData} layout="vertical" margin={{ left: 16, right: 24, top: 0, bottom: 0 }}>
             <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
@@ -695,6 +714,16 @@ function PriceReport() {
 
       {/* ── Section 2: Detail table ── */}
       <div className="rounded-lg border border-border bg-card overflow-hidden shadow-premium">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Price by Category</p>
+          <button
+            onClick={() => exportCSV("price-intelligence.csv", rows.map(r => ({ Category: r.category, Avg: r.avg.toFixed(2), Min: r.min.toFixed(2), Max: r.max.toFixed(2), Count: r.count })))}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </button>
+        </div>
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-sidebar" style={{ borderBottom: "1px solid var(--glass-border)" }}>
@@ -963,9 +992,18 @@ function StoreLeaderboard() {
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        Top 50 stores ranked by total products in their menus.
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          Top 50 stores ranked by total products in their menus.
+        </p>
+        <button
+          onClick={() => exportCSV("store-leaderboard.csv", rows.map(r => ({ Store: r.name, City: r.city, Products: r.total_products, Platforms: r.platform_count })))}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Export CSV
+        </button>
+      </div>
       <div className="rounded-lg border border-border bg-card overflow-hidden shadow-premium">
         <table className="w-full text-sm">
           <thead>
@@ -1107,8 +1145,15 @@ function BrandDistribution() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Power brands: widest reach */}
         <div className="rounded-lg border border-border bg-card overflow-hidden shadow-premium">
-          <div className="px-4 py-3 border-b border-border">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Power Brands — Widest Reach</p>
+            <button
+              onClick={() => exportCSV("brand-distribution.csv", all.slice(0, 15).map(r => ({ Brand: r.brand, Stores: r.store_count, Products: r.total_products, Avg_Price: r.avg_price?.toFixed(2) ?? "" })))}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export CSV
+            </button>
           </div>
           <table className="w-full text-sm">
             <thead>

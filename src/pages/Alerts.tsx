@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bell, Zap, AlertTriangle, Info, AlertCircle, Check, Filter,
-  RefreshCw, TrendingDown, TrendingUp, Package, Tag, X,
+  RefreshCw, TrendingDown, TrendingUp, Package, Tag, X, Download,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
+import { exportCSV } from "@/lib/export-csv";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -165,6 +166,21 @@ export function Alerts() {
             title="Refresh"
           >
             <RefreshCw className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => exportCSV("intel-alerts.csv", filtered.map(a => ({
+              Date: new Date(a.created_at).toLocaleDateString(),
+              Type: a.alert_type,
+              Severity: a.severity,
+              Title: a.title,
+              Body: a.body ?? "",
+              Brand: a.brand_name ?? "",
+              Product: a.product_name ?? "",
+            })))}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export
           </button>
           {unreadCount > 0 && (
             <button
