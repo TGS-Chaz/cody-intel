@@ -350,7 +350,16 @@ function ProductForm({ ownBrands, initial, onSave, onCancel, saving }: ProductFo
 
 // ── CSV Import Modal ──────────────────────────────────────────────────────────
 
-interface CsvRow { brand: string; product_name: string; category: string; weight: string; price: string; }
+interface CsvRow {
+  brand: string;
+  product_name: string;
+  category: string;
+  weight: string;
+  price: string;
+  thc_range: string;
+}
+
+interface ImportSummary { imported: number; skipped: number; brandsCreated: number; }
 
 interface CsvImportProps {
   orgId: string;
@@ -359,59 +368,127 @@ interface CsvImportProps {
   onDone: () => void;
 }
 
+function parseCsvLine(line: string): string[] {
+  // Handles quoted fields with commas inside
+  const cols: string[] = [];
+  let cur = "";
+  let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQuote = !inQuote; continue; }
+    if (ch === "," && !inQuote) { cols.push(cur.trim()); cur = ""; continue; }
+    cur += ch;
+  }
+  cols.push(cur.trim());
+  return cols;
+}
+
+function parsePasteLine(line: string): CsvRow | null {
+  // Format: Brand - Product Name - Category - Weight - Price - THC
+  const parts = line.split(/\s*-\s*/);
+  if (parts.length < 2) return null;
+  return {
+    brand:        parts[0]?.trim() ?? "",
+    product_name: parts[1]?.trim() ?? "",
+    category:     parts[2]?.trim() ?? "",
+    weight:       parts[3]?.trim() ?? "",
+    price:        parts[4]?.trim() ?? "",
+    thc_range:    parts[5]?.trim() ?? "",
+  };
+}
+
 function CsvImport({ orgId, brands, onClose, onDone }: CsvImportProps) {
+  const [mode, setMode]         = useState<"upload" | "paste">("upload");
+  const [pasteText, setPasteText] = useState("");
   const [rows, setRows]         = useState<CsvRow[]>([]);
   const [preview, setPreview]   = useState(false);
   const [importing, setImporting] = useState(false);
+  const [summary, setSummary]   = useState<ImportSummary | null>(null);
   const [error, setError]       = useState<string | null>(null);
+
+  function parseCsvText(text: string) {
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) { setError("CSV must have a header row and at least one data row."); return; }
+    const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/[\s-]+/g, "_"));
+    const idx = (col: string) => headers.indexOf(col);
+    if (idx("brand") === -1 || idx("product_name") === -1) {
+      setError("CSV must have at least 'brand' and 'product_name' columns.");
+      return;
+    }
+    const parsed: CsvRow[] = lines.slice(1).filter(l => l.trim()).map(line => {
+      const cols = parseCsvLine(line);
+      return {
+        brand:        cols[idx("brand")]        ?? "",
+        product_name: cols[idx("product_name")] ?? "",
+        category:     idx("category")  >= 0 ? cols[idx("category")]  ?? "" : "",
+        weight:       idx("weight")    >= 0 ? cols[idx("weight")]    ?? "" : "",
+        price:        idx("price")     >= 0 ? cols[idx("price")]     ?? "" : "",
+        thc_range:    idx("thc_range") >= 0 || idx("thc") >= 0
+          ? cols[idx("thc_range") >= 0 ? idx("thc_range") : idx("thc")] ?? ""
+          : "",
+      };
+    }).filter(r => r.brand && r.product_name);
+    setRows(parsed);
+    setPreview(true);
+    setError(null);
+  }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => {
-      const text = ev.target?.result as string;
-      const lines = text.trim().split(/\r?\n/);
-      if (lines.length < 2) { setError("CSV must have a header row and at least one data row."); return; }
-      // parse header
-      const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
-      const idx = (col: string) => headers.indexOf(col);
-      if (idx("brand") === -1 || idx("product_name") === -1) {
-        setError("CSV must have at least 'brand' and 'product_name' columns.");
-        return;
-      }
-      const parsed: CsvRow[] = lines.slice(1).filter(l => l.trim()).map(line => {
-        const cols = line.split(",");
-        return {
-          brand: cols[idx("brand")]?.trim() ?? "",
-          product_name: cols[idx("product_name")]?.trim() ?? "",
-          category: idx("category") >= 0 ? cols[idx("category")]?.trim() ?? "" : "",
-          weight: idx("weight") >= 0 ? cols[idx("weight")]?.trim() ?? "" : "",
-          price: idx("price") >= 0 ? cols[idx("price")]?.trim() ?? "" : "",
-        };
-      });
-      setRows(parsed);
-      setPreview(true);
-      setError(null);
-    };
+    reader.onload = ev => parseCsvText(ev.target?.result as string);
     reader.readAsText(file);
+  }
+
+  function handlePasteParse() {
+    const lines = pasteText.trim().split(/\r?\n/).filter(l => l.trim());
+    if (!lines.length) { setError("Paste at least one product line."); return; }
+    const parsed = lines.map(parsePasteLine).filter(Boolean) as CsvRow[];
+    if (!parsed.length) { setError("Could not parse any lines. Format: Brand - Product Name - Category - Weight - Price"); return; }
+    setRows(parsed);
+    setPreview(true);
+    setError(null);
   }
 
   async function doImport() {
     setImporting(true);
+    let imported = 0;
+    let skipped = 0;
+    let brandsCreated = 0;
+
+    // Load existing products once for duplicate checking
+    const { data: existingProducts } = await supabase
+      .from("user_products")
+      .select("product_name, brand_id")
+      .eq("org_id", orgId);
+    const existingSet = new Set(
+      (existingProducts ?? []).map((p: any) => `${p.brand_id}|${p.product_name.toLowerCase()}`)
+    );
+
+    // Brand cache: existing brands map + newly created
+    const brandCache: Record<string, string> = {};
+    for (const b of brands) brandCache[b.brand_name.toLowerCase()] = b.id;
+
     try {
       for (const row of rows) {
-        // find or create brand
-        let brandId: string | null = null;
-        const existing = brands.find(b => b.brand_name.toLowerCase() === row.brand.toLowerCase());
-        if (existing) {
-          brandId = existing.id;
-        } else if (row.brand) {
+        if (!row.brand || !row.product_name) { skipped++; continue; }
+        const brandKey = row.brand.toLowerCase();
+
+        // Find or create brand
+        let brandId = brandCache[brandKey] ?? null;
+        if (!brandId) {
           const { data: nb } = await supabase.from("user_brands")
             .insert({ org_id: orgId, brand_name: row.brand, is_own_brand: true })
             .select("id").single();
           brandId = nb?.id ?? null;
+          if (brandId) { brandCache[brandKey] = brandId; brandsCreated++; }
         }
+
+        // Skip duplicates
+        const dupKey = `${brandId}|${row.product_name.toLowerCase()}`;
+        if (existingSet.has(dupKey)) { skipped++; continue; }
+
         await supabase.from("user_products").insert({
           org_id: orgId,
           brand_id: brandId,
@@ -419,10 +496,13 @@ function CsvImport({ orgId, brands, onClose, onDone }: CsvImportProps) {
           category: row.category || null,
           weight: row.weight || null,
           unit_price: row.price ? parseFloat(row.price) : null,
+          thc_range: row.thc_range || null,
           active: true,
         });
+        existingSet.add(dupKey);
+        imported++;
       }
-      onDone();
+      setSummary({ imported, skipped, brandsCreated });
     } catch (err: any) {
       setError(err.message ?? "Import failed.");
     } finally {
@@ -430,55 +510,120 @@ function CsvImport({ orgId, brands, onClose, onDone }: CsvImportProps) {
     }
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-xl rounded-xl border border-border bg-card shadow-xl space-y-4 p-6">
+      <div className="w-full max-w-2xl rounded-xl border border-border bg-card shadow-xl space-y-4 p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-foreground">Import Products via CSV</h2>
+          <h2 className="text-base font-semibold text-foreground">Bulk Import Products</h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-accent transition-colors"><X className="w-4 h-4" /></button>
         </div>
 
-        {!preview ? (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Upload a CSV with columns: <code className="text-xs bg-muted px-1 py-0.5 rounded">brand, product_name, category, weight, price</code></p>
-            <label className="flex flex-col items-center gap-2 p-6 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 transition-colors">
-              <Upload className="w-6 h-6 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Click to upload CSV</span>
-              <input type="file" accept=".csv" className="hidden" onChange={handleFile} />
-            </label>
+        {/* Summary screen */}
+        {summary ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg border border-border bg-card p-4 text-center">
+                <p className="text-2xl font-bold text-primary">{summary.imported}</p>
+                <p className="text-xs text-muted-foreground mt-1">Products imported</p>
+              </div>
+              <div className="rounded-lg border border-border bg-card p-4 text-center">
+                <p className="text-2xl font-bold text-amber-500">{summary.skipped}</p>
+                <p className="text-xs text-muted-foreground mt-1">Skipped (duplicates)</p>
+              </div>
+              <div className="rounded-lg border border-border bg-card p-4 text-center">
+                <p className="text-2xl font-bold text-blue-500">{summary.brandsCreated}</p>
+                <p className="text-xs text-muted-foreground mt-1">New brands created</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <button onClick={onDone} className={primaryBtn()}>Done</button>
+            </div>
+          </div>
+        ) : !preview ? (
+          // ── Input screen ────────────────────────────────────────────────────
+          <div className="space-y-4">
+            {/* Mode toggle */}
+            <div className="flex gap-1 p-1 bg-secondary rounded-lg w-fit">
+              {(["upload", "paste"] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => { setMode(m); setError(null); }}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${mode === m ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {m === "upload" ? "Upload CSV" : "Paste Text"}
+                </button>
+              ))}
+            </div>
+
+            {mode === "upload" ? (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Columns: <code className="bg-muted px-1 py-0.5 rounded">brand, product_name, category, weight, price, thc_range</code>
+                  {" "}— only brand + product_name required
+                </p>
+                <label className="flex flex-col items-center gap-2 p-8 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 transition-colors">
+                  <Upload className="w-7 h-7 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground font-medium">Click to upload .csv file</span>
+                  <span className="text-xs text-muted-foreground">or drag and drop</span>
+                  <input type="file" accept=".csv" className="hidden" onChange={handleFile} />
+                </label>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  One product per line: <code className="bg-muted px-1 py-0.5 rounded">Brand - Product Name - Category - Weight - Price - THC%</code>
+                </p>
+                <textarea
+                  value={pasteText}
+                  onChange={e => { setPasteText(e.target.value); setError(null); }}
+                  placeholder={"Wyld Gummies - Strawberry 10mg - Edibles - 10pc - 12.00 - 0%\nCresco - LLR Sativa - Concentrate - 1g - 45.00 - 85%"}
+                  rows={8}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-xs font-mono text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <button onClick={handlePasteParse} className={primaryBtn()}>Parse Products</button>
+              </div>
+            )}
             {error && <p className="text-xs text-red-400">{error}</p>}
           </div>
         ) : (
+          // ── Preview screen ──────────────────────────────────────────────────
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Preview ({rows.length} rows). First 5 shown:</p>
-            <div className="rounded-lg border border-border overflow-hidden">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">{rows.length} products ready to import</p>
+              <button onClick={() => { setPreview(false); setRows([]); }} className="text-xs text-muted-foreground hover:text-foreground">← Back</button>
+            </div>
+            <div className="rounded-lg border border-border overflow-auto max-h-64">
               <table className="w-full text-xs">
-                <thead>
+                <thead className="sticky top-0">
                   <tr className="bg-sidebar">
                     <th className={thCls}>Brand</th>
                     <th className={thCls}>Name</th>
                     <th className={thCls}>Category</th>
                     <th className={thCls}>Weight</th>
                     <th className={thCls}>Price</th>
+                    <th className={thCls}>THC</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
-                  {rows.slice(0, 5).map((r, i) => (
-                    <tr key={i}>
-                      <td className="px-4 py-2">{r.brand}</td>
+                  {rows.map((r, i) => (
+                    <tr key={i} className="hover:bg-accent/20">
+                      <td className="px-4 py-2 font-medium">{r.brand}</td>
                       <td className="px-4 py-2">{r.product_name}</td>
                       <td className="px-4 py-2 text-muted-foreground">{r.category || "—"}</td>
                       <td className="px-4 py-2 text-muted-foreground">{r.weight || "—"}</td>
                       <td className="px-4 py-2 text-muted-foreground">{r.price || "—"}</td>
+                      <td className="px-4 py-2 text-muted-foreground">{r.thc_range || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {rows.length > 5 && <p className="text-xs text-muted-foreground">…and {rows.length - 5} more</p>}
+            <p className="text-xs text-muted-foreground">Existing products with the same brand + name will be skipped automatically.</p>
             {error && <p className="text-xs text-red-400">{error}</p>}
             <div className="flex justify-end gap-2 pt-2 border-t border-border">
-              <button onClick={onClose} className={secondaryBtn()}>Cancel</button>
+              <button onClick={() => { setPreview(false); setRows([]); setError(null); }} className={secondaryBtn()}>Back</button>
               <button onClick={doImport} disabled={importing} className={primaryBtn("flex items-center gap-1.5 disabled:opacity-50")}>
                 {importing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                 Import {rows.length} Products

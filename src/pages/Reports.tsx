@@ -490,9 +490,9 @@ function PriceReport() {
       setLoading(true);
 
       // Load own brands + store list in parallel with menus
-      const [menusRes, ownBrandsRes, storesRes] = await Promise.all([
+      const [menusRes, userBrandsRes, storesRes] = await Promise.all([
         supabase.from("dispensary_menus").select("id, intel_store_id").not("intel_store_id", "is", null),
-        supabase.from("market_brands").select("id, name").eq("is_own_brand", true),
+        supabase.from("user_brands").select("brand_name").eq("is_own_brand", true),
         supabase.from("intel_stores").select("id, name, city, crm_contact_id")
           .not("crm_contact_id", "is", null)
           .order("name")
@@ -500,7 +500,13 @@ function PriceReport() {
       ]);
 
       const menus = menusRes.data ?? [];
-      const ownNames = new Set((ownBrandsRes.data ?? []).map(b => b.name.toLowerCase()));
+      let ownNamesArr = (userBrandsRes.data ?? []).map((b: any) => b.brand_name.toLowerCase());
+      // Fallback: if user hasn't configured user_brands, use market_brands flags
+      if (!ownNamesArr.length) {
+        const { data: mktOwn } = await supabase.from("market_brands").select("name").eq("is_own_brand", true);
+        ownNamesArr = (mktOwn ?? []).map((b: any) => b.name.toLowerCase());
+      }
+      const ownNames = new Set(ownNamesArr);
       setOwnBrandNames(ownNames);
       setStores(storesRes.data ?? []);
 
