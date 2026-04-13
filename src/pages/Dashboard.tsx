@@ -341,24 +341,15 @@ export function Dashboard() {
       let ownBrandStoreTotal = 0;
 
       if (ownBrands.length > 0 && validMenuIds.length > 0) {
+        // One RPC call per own-brand. Replaces the chunked 14KB-URL query that
+        // was blowing past PostgREST's URL-length cap on 130+ menu_ids.
         const presenceResults = await Promise.all(
           ownBrands.map(async (b) => {
-            // Count menu_items where raw_brand ILIKE brand_name
-            // Use chunked queries so we don't pass too many IDs at once
-            const storeSet = new Set<string>();
-            for (let i = 0; i < validMenuIds.length; i += CHUNK) {
-              const { data } = await supabase
-                .from("menu_items")
-                .select("dispensary_menu_id")
-                .ilike("raw_brand", b.brand_name)
-                .eq("is_on_menu", true)
-                .in("dispensary_menu_id", validMenuIds.slice(i, i + CHUNK));
-              for (const row of data ?? []) {
-                const sid = menuToStore[row.dispensary_menu_id];
-                if (sid) storeSet.add(sid);
-              }
-            }
-            return { brand_name: b.brand_name, store_count: storeSet.size };
+            const { data, error } = await supabase.rpc("get_brand_store_count", {
+              brand_name: b.brand_name,
+            });
+            if (error) return { brand_name: b.brand_name, store_count: 0 };
+            return { brand_name: b.brand_name, store_count: (data as number) ?? 0 };
           })
         );
         brandPresence = presenceResults.sort((a, b) => b.store_count - a.store_count);
