@@ -8,6 +8,7 @@ const DashboardMap = lazy(() =>
 );
 import { MyDistribution } from "@/components/MyDistribution";
 import { NormalizationStats } from "@/components/NormalizationStats";
+import { WeightedDistribution } from "@/components/WeightedDistribution";
 import { supabase } from "@/lib/supabase";
 import { useOrg } from "@/lib/org";
 import { isExcludedBrand } from "@/lib/analytics-filters";
@@ -518,7 +519,12 @@ export function Dashboard() {
       )}
 
       {/* ── My Distribution (Feature 1) ─────────────────────────────────────── */}
-      {orgId && <MyDistribution orgId={orgId} />}
+      {orgId && (
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4">
+          <MyDistribution orgId={orgId} />
+          <WeightedDistribution orgId={orgId} />
+        </div>
+      )}
 
       {/* ── Catalog Mastering (Feature 2) ───────────────────────────────────── */}
       <NormalizationStats />
