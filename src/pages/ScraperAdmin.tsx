@@ -59,12 +59,11 @@ const PLATFORMS: Platform[] = [
   {
     id: "jane",
     label: "Jane",
-    source: "jane",
+    source: "jane-embed",
     color: "#E91E63",
-    description: "Jane Technologies menus — scraping blocked, requires proxy configuration",
+    description: "iHeartJane menus via the /embed/stores/{id}/menu page — no proxy needed",
     functionName: "scrape-jane",
-    batchSize: 5,
-    blocked: "Blocked — requires proxy fix",
+    batchSize: 3,
   },
 ];
 
@@ -73,9 +72,10 @@ const TOTAL_STORES = 458;
 
 // Platform info for unmatched view
 const PLATFORM_INFO: Record<string, { letter: string; color: string; label: string; slugField: string; functionName: string }> = {
-  dutchie:  { letter: "D", color: "#00D4AA", label: "Dutchie",   slugField: "dutchie_slug",  functionName: "scrape-dutchie"  },
-  leafly:   { letter: "L", color: "#3BB143", label: "Leafly",    slugField: "leafly_slug",   functionName: "scrape-leafly"   },
-  weedmaps: { letter: "W", color: "#F7931A", label: "Weedmaps",  slugField: "weedmaps_slug", functionName: "scrape-weedmaps" },
+  dutchie:  { letter: "D", color: "#00D4AA", label: "Dutchie",   slugField: "dutchie_slug",   functionName: "scrape-dutchie"  },
+  leafly:   { letter: "L", color: "#3BB143", label: "Leafly",    slugField: "leafly_slug",    functionName: "scrape-leafly"   },
+  weedmaps: { letter: "W", color: "#F7931A", label: "Weedmaps",  slugField: "weedmaps_slug",  functionName: "scrape-weedmaps" },
+  jane:     { letter: "J", color: "#E91E63", label: "Jane",      slugField: "jane_store_id",  functionName: "scrape-jane"     },
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -345,6 +345,7 @@ function buildScrapeCandidate(d: UnmatchedDiscovery, intel: IntelStore): any | n
   if (d.platform === "dutchie")  return { ...base, dutchieId: d.platform_id, cName: d.platform_slug };
   if (d.platform === "leafly")   return { ...base, slug: d.platform_slug, leaflyName: d.store_name };
   if (d.platform === "weedmaps") return { ...base, slug: d.platform_slug, wmName: d.store_name, menuUrl: `https://weedmaps.com/dispensaries/${d.platform_slug}/menu` };
+  if (d.platform === "jane")     return { ...base, janeStoreId: d.platform_id ?? d.platform_slug };
   return null;
 }
 
