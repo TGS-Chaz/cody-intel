@@ -160,7 +160,7 @@ export default function AppLayout() {
               color: location.pathname === "/ask" ? "hsl(168 100% 42%)" : undefined,
             }}
           >
-            <img src={codyIcon} alt="" className="w-4 h-4 shrink-0" style={{ filter: "brightness(3) saturate(0.1)" }} />
+            <img src={codyIcon} alt="" className="w-4 h-4 shrink-0" style={{ filter: "invert(67%) sepia(99%) saturate(401%) hue-rotate(127deg) brightness(97%) contrast(101%)" }} />
             <span>Ask Cody</span>
             <Sparkles className="w-3 h-3 ml-auto text-primary/50" />
           </button>
@@ -317,7 +317,7 @@ export default function AppLayout() {
               location.pathname === "/ask" ? "text-primary" : "text-muted-foreground"
             }`}
           >
-            <img src={codyIcon} alt="" className="w-[18px] h-[18px]" style={{ filter: "brightness(3) saturate(0.1)" }} />
+            <img src={codyIcon} alt="" className="w-[18px] h-[18px]" style={{ filter: "invert(67%) sepia(99%) saturate(401%) hue-rotate(127deg) brightness(97%) contrast(101%)" }} />
             <span>Ask Cody</span>
           </NavLink>
         </nav>
