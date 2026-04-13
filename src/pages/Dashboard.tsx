@@ -7,6 +7,7 @@ const DashboardMap = lazy(() =>
   import("@/components/maps/DashboardMap").then((m) => ({ default: m.DashboardMap }))
 );
 import { MyDistribution } from "@/components/MyDistribution";
+import { NormalizationStats } from "@/components/NormalizationStats";
 import { supabase } from "@/lib/supabase";
 import { useOrg } from "@/lib/org";
 import { isExcludedBrand } from "@/lib/analytics-filters";
@@ -518,6 +519,9 @@ export function Dashboard() {
 
       {/* ── My Distribution (Feature 1) ─────────────────────────────────────── */}
       {orgId && <MyDistribution orgId={orgId} />}
+
+      {/* ── Catalog Mastering (Feature 2) ───────────────────────────────────── */}
+      <NormalizationStats />
 
       {/* ── Market Map ──────────────────────────────────────────────────────── */}
       <Suspense fallback={
