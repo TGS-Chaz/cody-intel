@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion, LayoutGroup } from "framer-motion";
 import {
@@ -21,6 +21,7 @@ import { useOrg } from "@/lib/org";
 import codyIcon from "@/assets/cody-icon.svg";
 import CodyGlow from "@/components/CodyGlow";
 import UserAvatar from "@/components/UserAvatar";
+import NotificationsCenter from "@/components/NotificationsCenter";
 
 const navItems = [
   { to: "/",          icon: LayoutDashboard, label: "Dashboard",  end: true },
@@ -30,6 +31,24 @@ const navItems = [
   { to: "/settings",  icon: Settings,        label: "Settings" },
 ];
 
+function LiveClock() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+  const dateStr = now.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
+  return (
+    <div className="text-right">
+      <p className="text-[13px] font-semibold tabular-nums text-foreground/80 leading-tight">{timeStr}</p>
+      <p className="text-[10px] text-muted-foreground uppercase tracking-wider leading-tight">{dateStr}</p>
+    </div>
+  );
+}
 
 export default function AppLayout() {
   const location = useLocation();
@@ -165,6 +184,7 @@ export default function AppLayout() {
                   {user.email}
                 </span>
               </div>
+              <NotificationsCenter />
               <button
                 onClick={handleSignOut}
                 className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
@@ -191,23 +211,27 @@ export default function AppLayout() {
 
       {/* Main content */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Desktop top bar — org info */}
+        {/* Desktop top bar */}
         <div
-          className="hidden md:flex items-center justify-end px-6 h-11 shrink-0"
+          className="hidden md:flex items-center justify-between px-6 h-11 shrink-0"
           style={{ borderBottom: "1px solid var(--glass-border-subtle)" }}
         >
-          {org && (
-            <div className="flex items-center gap-2.5">
-              <p className="text-[11px] text-muted-foreground font-medium">{org.name}</p>
-              {org.logo_url ? (
-                <img src={org.logo_url} alt="" className="w-8 h-8 rounded-lg object-cover border border-border" />
-              ) : (
-                <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center border border-border">
-                  <Building2 className="w-4 h-4 text-muted-foreground" />
-                </div>
-              )}
-            </div>
-          )}
+          <div>{/* left side — empty for now */}</div>
+          <div className="flex items-center gap-4">
+            <LiveClock />
+            {org && (
+              <div className="flex items-center gap-2.5">
+                <p className="text-[11px] text-muted-foreground font-medium">{org.name}</p>
+                {org.logo_url ? (
+                  <img src={org.logo_url} alt="" className="w-8 h-8 rounded-lg object-cover border border-border" />
+                ) : (
+                  <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center border border-border">
+                    <Building2 className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Mobile header */}
