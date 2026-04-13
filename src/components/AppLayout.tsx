@@ -12,7 +12,7 @@ import {
   Moon,
   Sunset,
   Building2,
-  Brain,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useProfile, profileInitials } from "@/lib/profile";
@@ -27,7 +27,6 @@ const navItems = [
   { to: "/stores",    icon: Store,           label: "Stores" },
   { to: "/scrapers",  icon: Radio,           label: "Scrapers" },
   { to: "/reports",   icon: BarChart2,       label: "Reports" },
-  { to: "/ask",       icon: Brain,           label: "Ask Cody" },
   { to: "/settings",  icon: Settings,        label: "Settings" },
 ];
 
@@ -126,6 +125,27 @@ export default function AppLayout() {
             })}
           </LayoutGroup>
         </nav>
+
+        {/* Ask Cody button */}
+        <div className="px-3 pb-2">
+          <button
+            onClick={() => navigate("/ask")}
+            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-[12px] font-medium transition-all duration-150 hover:bg-primary/10 text-muted-foreground hover:text-primary"
+            style={{
+              background: location.pathname === "/ask"
+                ? "hsl(168 100% 42% / 0.12)"
+                : "hsl(168 100% 42% / 0.05)",
+              border: location.pathname === "/ask"
+                ? "1px solid hsl(168 100% 42% / 0.35)"
+                : "1px solid hsl(168 100% 42% / 0.12)",
+              color: location.pathname === "/ask" ? "hsl(168 100% 42%)" : undefined,
+            }}
+          >
+            <img src={codyIcon} alt="" className="w-4 h-4 shrink-0" style={{ filter: "brightness(3) saturate(0.1)" }} />
+            <span>Ask Cody</span>
+            <Sparkles className="w-3 h-3 ml-auto text-primary/50" />
+          </button>
+        </div>
 
         {/* Bottom — user + sign out */}
         <div className="p-3" style={{ borderTop: "1px solid var(--glass-border)" }}>
@@ -267,6 +287,15 @@ export default function AppLayout() {
               </NavLink>
             );
           })}
+          <NavLink
+            to="/ask"
+            className={`flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-medium transition-colors duration-150 ${
+              location.pathname === "/ask" ? "text-primary" : "text-muted-foreground"
+            }`}
+          >
+            <img src={codyIcon} alt="" className="w-[18px] h-[18px]" style={{ filter: "brightness(3) saturate(0.1)" }} />
+            <span>Ask Cody</span>
+          </NavLink>
         </nav>
       </main>
     </div>
