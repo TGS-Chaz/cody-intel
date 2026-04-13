@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { isExcludedCategory, isExcludedBrand } from "@/lib/analytics-filters";
 import { BarChart2, Package, Tag, Wifi, Search, Trophy, DollarSign, LayoutList } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -117,7 +118,7 @@ function BrandReport() {
       const agg: Record<string, { stores: Set<string>; total: number; priceSum: number; priceCount: number }> = {};
       for (const item of allItems) {
         const b = item.raw_brand;
-        if (!b) continue;
+        if (!b || isExcludedBrand(b)) continue;
         if (!agg[b]) agg[b] = { stores: new Set(), total: 0, priceSum: 0, priceCount: 0 };
         const storeId = menuToStore[item.dispensary_menu_id];
         if (storeId) agg[b].stores.add(storeId);
@@ -215,7 +216,7 @@ function CategoryReport() {
       const agg: Record<string, { stores: Set<string>; count: number; priceSum: number; priceCount: number }> = {};
       for (const item of allItems) {
         const cat = item.raw_category;
-        if (!cat) continue;
+        if (!cat || isExcludedCategory(cat)) continue;
         if (!agg[cat]) agg[cat] = { stores: new Set(), count: 0, priceSum: 0, priceCount: 0 };
         const storeId = menuToStore[item.dispensary_menu_id];
         if (storeId) agg[cat].stores.add(storeId);
@@ -451,7 +452,7 @@ function PriceReport() {
         if (data) {
           for (const item of data) {
             const cat = item.raw_category;
-            if (!cat || item.raw_price == null) continue;
+            if (!cat || item.raw_price == null || isExcludedCategory(cat)) continue;
             if (!catAgg[cat]) catAgg[cat] = { prices: [] };
             catAgg[cat].prices.push(item.raw_price);
           }
@@ -656,7 +657,7 @@ function BrandDistribution() {
         if (data) {
           for (const item of data) {
             const b = item.raw_brand;
-            if (!b) continue;
+            if (!b || isExcludedBrand(b)) continue;
             if (!agg[b]) agg[b] = { stores: new Set(), total: 0 };
             const storeId = menuToStore[item.dispensary_menu_id];
             if (storeId) agg[b].stores.add(storeId);

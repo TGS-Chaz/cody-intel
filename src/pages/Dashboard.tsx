@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { isExcludedCategory, isExcludedBrand } from "@/lib/analytics-filters";
 import { Store, Wifi, TrendingUp, Database, Clock, Trophy } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
@@ -177,7 +178,7 @@ export function Dashboard() {
       const brandAgg: Record<string, Set<string>> = {};
       for (const item of allItems) {
         const b = item.raw_brand;
-        if (!b) continue;
+        if (!b || isExcludedBrand(b)) continue;
         if (!brandAgg[b]) brandAgg[b] = new Set();
         const storeId = menuToStore[item.dispensary_menu_id];
         if (storeId) brandAgg[b].add(storeId);
@@ -191,7 +192,7 @@ export function Dashboard() {
       const catAgg: Record<string, { count: number; prices: number[] }> = {};
       for (const item of allItems) {
         const cat = item.raw_category;
-        if (!cat) continue;
+        if (!cat || isExcludedCategory(cat)) continue;
         if (!catAgg[cat]) catAgg[cat] = { count: 0, prices: [] };
         catAgg[cat].count++;
         if (item.raw_price != null && item.raw_price > 0) catAgg[cat].prices.push(item.raw_price);
