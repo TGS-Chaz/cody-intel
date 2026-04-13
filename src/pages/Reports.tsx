@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { isExcludedCategory, isExcludedBrand } from "@/lib/analytics-filters";
-import { BarChart2, Package, Tag, Wifi, Search, Trophy, DollarSign, LayoutList } from "lucide-react";
+import { BarChart2, Package, Tag, Wifi, Search, Trophy, DollarSign, LayoutList, Target } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
@@ -52,7 +52,7 @@ interface StoreLeaderRow {
   platform_count: number;
 }
 
-type TabId = "brands" | "categories" | "coverage" | "prices" | "leaderboard" | "distribution";
+type TabId = "brands" | "categories" | "coverage" | "prices" | "leaderboard" | "distribution" | "gap";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -789,6 +789,297 @@ function BrandDistribution() {
   );
 }
 
+// ── Report 7: Gap Analysis ────────────────────────────────────────────────────
+
+interface MarketBrand { id: string; name: string; }
+interface GapStore { id: string; name: string; city: string; crm_contact_id: string; }
+
+function GapAnalysis() {
+  const [ownBrands, setOwnBrands]           = useState<MarketBrand[]>([]);
+  const [competitorBrands, setCompetitorBrands] = useState<MarketBrand[]>([]);
+  const [storeMap, setStoreMap]             = useState<Map<string, Set<string>>>(new Map());
+  const [stores, setStores]                 = useState<GapStore[]>([]);
+  const [loading, setLoading]               = useState(true);
+  const [selectedOwn, setSelectedOwn]       = useState<string>("all");
+  const [selectedComp, setSelectedComp]     = useState<string>("");
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+
+      const [ownRes, compRes, storeRes] = await Promise.all([
+        supabase.from("market_brands").select("id, name").eq("is_own_brand", true),
+        supabase.from("market_brands").select("id, name").eq("is_competitor_brand", true),
+        supabase.from("intel_stores").select("id, name, city, crm_contact_id").not("crm_contact_id", "is", null).limit(500),
+      ]);
+
+      const ownList: MarketBrand[]  = ownRes.data  ?? [];
+      const compList: MarketBrand[] = compRes.data ?? [];
+      const storeList: GapStore[]   = storeRes.data ?? [];
+
+      setOwnBrands(ownList);
+      setCompetitorBrands(compList);
+      setStores(storeList);
+      if (compList.length > 0) setSelectedComp(compList[0].id);
+
+      // Fetch menu_items in chunks of 5000
+      const map = new Map<string, Set<string>>();
+      const CHUNK = 5000;
+      let offset = 0;
+      while (true) {
+        const { data } = await supabase
+          .from("menu_items")
+          .select("dispensary_id, raw_brand")
+          .eq("is_on_menu", true)
+          .not("raw_brand", "is", null)
+          .range(offset, offset + CHUNK - 1);
+        if (!data || data.length === 0) break;
+        for (const item of data) {
+          if (!item.dispensary_id || !item.raw_brand) continue;
+          if (!map.has(item.dispensary_id)) map.set(item.dispensary_id, new Set());
+          map.get(item.dispensary_id)!.add(item.raw_brand.toLowerCase());
+        }
+        if (data.length < CHUNK) break;
+        offset += CHUNK;
+      }
+      setStoreMap(map);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  if (loading) return <Skeleton rows={12} />;
+
+  if (ownBrands.length === 0 || competitorBrands.length === 0) {
+    return (
+      <div className="rounded-xl border border-border bg-card/60 p-10 text-center space-y-2">
+        <Target className="w-8 h-8 text-muted-foreground mx-auto" />
+        <p className="text-sm font-medium text-foreground">No brands configured</p>
+        <p className="text-xs text-muted-foreground">
+          Go to <span className="text-primary font-medium">Settings → Brands</span> to add your own brands and competitor brands.
+        </p>
+      </div>
+    );
+  }
+
+  // Resolve selected own brand names (lowercased)
+  const ownNames: Set<string> = selectedOwn === "all"
+    ? new Set(ownBrands.map(b => b.name.toLowerCase()))
+    : new Set([ownBrands.find(b => b.id === selectedOwn)?.name.toLowerCase() ?? ""]);
+
+  const compBrand = competitorBrands.find(b => b.id === selectedComp);
+  const compName  = compBrand?.name.toLowerCase() ?? "";
+
+  const gapStores: GapStore[]        = [];
+  const whiteSpaceStores: GapStore[] = [];
+  const exclusiveStores: GapStore[]  = [];
+  const competitiveStores: GapStore[] = [];
+
+  // Also track counts for summary
+  const gapCompCounts: Record<string, number>   = {};
+  const exclOwnCounts: Record<string, number>   = {};
+  const compOwnCounts: Record<string, number>   = {};
+  const compTheirCounts: Record<string, number> = {};
+
+  for (const store of stores) {
+    const brands = storeMap.get(store.id) ?? new Set<string>();
+    const hasOwn  = [...ownNames].some(n => brands.has(n));
+    const hasComp = brands.has(compName);
+
+    if (hasComp && !hasOwn) {
+      gapStores.push(store);
+      // count competitor products (approximate: all comp brand items)
+      gapCompCounts[store.id] = [...brands].filter(b => b === compName).length;
+    } else if (!hasOwn && !hasComp) {
+      whiteSpaceStores.push(store);
+    } else if (hasOwn && !hasComp) {
+      exclusiveStores.push(store);
+      exclOwnCounts[store.id] = [...brands].filter(b => ownNames.has(b)).length;
+    } else if (hasOwn && hasComp) {
+      competitiveStores.push(store);
+      compOwnCounts[store.id]   = [...brands].filter(b => ownNames.has(b)).length;
+      compTheirCounts[store.id] = [...brands].filter(b => b === compName).length;
+    }
+  }
+
+  const summaryCards = [
+    { label: "Gap Stores",        count: gapStores.length,         color: "#F59E0B", desc: "Carry competitor, not us" },
+    { label: "White Space",       count: whiteSpaceStores.length,  color: "hsl(217 91% 60%)", desc: "Carry neither" },
+    { label: "Exclusive Stores",  count: exclusiveStores.length,   color: "#10B981", desc: "Only our brand present" },
+    { label: "Competitive",       count: competitiveStores.length, color: "#A855F7", desc: "Both brands present" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">My Brand</label>
+          <select
+            value={selectedOwn}
+            onChange={e => setSelectedOwn(e.target.value)}
+            className="px-3 py-1.5 rounded-md border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            <option value="all">All My Brands</option>
+            {ownBrands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Competitor Brand</label>
+          <select
+            value={selectedComp}
+            onChange={e => setSelectedComp(e.target.value)}
+            className="px-3 py-1.5 rounded-md border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            {competitorBrands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {summaryCards.map(s => (
+          <div key={s.label} className="rounded-xl border border-border bg-card/60 p-4 text-center" style={{ borderTop: `3px solid ${s.color}` }}>
+            <p className="text-2xl font-bold font-mono-data" style={{ color: s.color }}>{s.count}</p>
+            <p className="text-xs font-semibold text-foreground mt-0.5">{s.label}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{s.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Gap Stores */}
+      <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
+        <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+          <p className="text-xs font-semibold text-foreground uppercase tracking-widest">Gap Stores — Sales Targets ({gapStores.length})</p>
+        </div>
+        {gapStores.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-muted-foreground text-center">No gap stores found.</p>
+        ) : (
+          <div className="max-h-72 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-sidebar">
+                <tr style={{ borderBottom: "1px solid var(--glass-border)" }}>
+                  <th className={thCls}>Store Name</th>
+                  <th className={thCls}>City</th>
+                  <th className={thCls}>Competitor Products</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gapStores.map(s => (
+                  <tr key={s.id} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
+                    <td className="px-4 py-2 font-medium text-foreground text-xs">{s.name}</td>
+                    <td className="px-4 py-2 text-xs text-muted-foreground">{s.city}</td>
+                    <td className="px-4 py-2 font-mono-data text-xs text-amber-500">{compBrand?.name}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* White Space */}
+      <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
+        <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: "hsl(217 91% 60%)" }} />
+          <p className="text-xs font-semibold text-foreground uppercase tracking-widest">White Space — Untouched Stores ({whiteSpaceStores.length})</p>
+        </div>
+        {whiteSpaceStores.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-muted-foreground text-center">No white space stores found.</p>
+        ) : (
+          <div className="max-h-72 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-sidebar">
+                <tr style={{ borderBottom: "1px solid var(--glass-border)" }}>
+                  <th className={thCls}>Store Name</th>
+                  <th className={thCls}>City</th>
+                  <th className={thCls}>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {whiteSpaceStores.map(s => (
+                  <tr key={s.id} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
+                    <td className="px-4 py-2 font-medium text-foreground text-xs">{s.name}</td>
+                    <td className="px-4 py-2 text-xs text-muted-foreground">{s.city}</td>
+                    <td className="px-4 py-2 text-[10px] text-muted-foreground">No tracked brands on menu</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Exclusive Stores */}
+      <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
+        <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+          <p className="text-xs font-semibold text-foreground uppercase tracking-widest">Exclusive Stores — Protect These ({exclusiveStores.length})</p>
+        </div>
+        {exclusiveStores.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-muted-foreground text-center">No exclusive stores found.</p>
+        ) : (
+          <div className="max-h-72 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-sidebar">
+                <tr style={{ borderBottom: "1px solid var(--glass-border)" }}>
+                  <th className={thCls}>Store Name</th>
+                  <th className={thCls}>City</th>
+                  <th className={thCls}>Our Products</th>
+                </tr>
+              </thead>
+              <tbody>
+                {exclusiveStores.map(s => (
+                  <tr key={s.id} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
+                    <td className="px-4 py-2 font-medium text-foreground text-xs">{s.name}</td>
+                    <td className="px-4 py-2 text-xs text-muted-foreground">{s.city}</td>
+                    <td className="px-4 py-2 font-mono-data text-xs text-emerald-500">{exclOwnCounts[s.id] ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Competitive Stores */}
+      <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
+        <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-purple-500 shrink-0" />
+          <p className="text-xs font-semibold text-foreground uppercase tracking-widest">Competitive Stores — Both Present ({competitiveStores.length})</p>
+        </div>
+        {competitiveStores.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-muted-foreground text-center">No competitive stores found.</p>
+        ) : (
+          <div className="max-h-72 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-sidebar">
+                <tr style={{ borderBottom: "1px solid var(--glass-border)" }}>
+                  <th className={thCls}>Store Name</th>
+                  <th className={thCls}>City</th>
+                  <th className={thCls}>Our Count</th>
+                  <th className={thCls}>Their Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                {competitiveStores.map(s => (
+                  <tr key={s.id} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
+                    <td className="px-4 py-2 font-medium text-foreground text-xs">{s.name}</td>
+                    <td className="px-4 py-2 text-xs text-muted-foreground">{s.city}</td>
+                    <td className="px-4 py-2 font-mono-data text-xs text-emerald-500">{compOwnCounts[s.id] ?? "—"}</td>
+                    <td className="px-4 py-2 font-mono-data text-xs text-purple-400">{compTheirCounts[s.id] ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Reports page ─────────────────────────────────────────────────────────
 
 type Tab = { id: TabId; label: string; icon: React.ElementType };
@@ -800,6 +1091,7 @@ const TABS: Tab[] = [
   { id: "prices",       label: "Price Intelligence",  icon: DollarSign },
   { id: "leaderboard",  label: "Store Leaderboard",   icon: Trophy    },
   { id: "distribution", label: "Brand Distribution",  icon: LayoutList },
+  { id: "gap",          label: "Gap Analysis",        icon: Target    },
 ];
 
 export function Reports() {
@@ -844,6 +1136,7 @@ export function Reports() {
       <div className={tab === "prices"       ? "" : "hidden"}>{visited.has("prices")       && <PriceReport />}</div>
       <div className={tab === "leaderboard"  ? "" : "hidden"}>{visited.has("leaderboard")  && <StoreLeaderboard />}</div>
       <div className={tab === "distribution" ? "" : "hidden"}>{visited.has("distribution") && <BrandDistribution />}</div>
+      <div className={tab === "gap"          ? "" : "hidden"}>{visited.has("gap")          && <GapAnalysis />}</div>
     </div>
   );
 }
