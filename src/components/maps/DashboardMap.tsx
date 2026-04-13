@@ -53,7 +53,12 @@ export function DashboardMap() {
 
     async function load() {
       setLoading(true);
-      const [storesRes, brandsRes, snapsRes] = await Promise.all([
+      // Source of truth for "which stores carry my brand" is the
+      // get_own_brand_stores RPC — it resolves aliases via brand_aliases
+      // so 'SuperNova' correctly maps to Sungaze, etc. The old path read
+      // user_brands directly and missed every aliased brand, collapsing
+      // the map to ~4 green pins instead of 61.
+      const [storesRes, brandsRes, aliasesRes, myStoresRes, snapsRes] = await Promise.all([
         supabase
           .from("intel_stores")
           .select("id, name, city, latitude, longitude, total_products, menu_last_updated")
@@ -61,22 +66,39 @@ export function DashboardMap() {
           .not("longitude", "is", null),
         supabase
           .from("user_brands")
-          .select("brand_name, is_own_brand")
+          .select("brand_name")
           .eq("org_id", orgId)
           .eq("is_own_brand", true),
+        supabase
+          .from("brand_aliases")
+          .select("canonical_name, alias"),
+        supabase.rpc("get_own_brand_stores", { p_org_id: orgId }),
         supabase
           .from("menu_snapshots")
           .select("intel_store_id, product_data, snapshot_date")
           .order("snapshot_date", { ascending: false })
-          .limit(800),
+          .limit(1200),
       ]);
       if (cancelled) return;
 
-      const ownBrandNames = new Set(
-        (brandsRes.data ?? []).map((b) => b.brand_name.toLowerCase())
+      // Canonical own-brand names (lowercased for matching)
+      const ownBrandLc = new Set(
+        (brandsRes.data ?? []).map((b) => b.brand_name.toLowerCase()),
+      );
+      // Alias set: any alias whose canonical resolves to an own-brand
+      const brandVariants = new Set<string>(ownBrandLc);
+      for (const a of aliasesRes.data ?? []) {
+        if (ownBrandLc.has((a.canonical_name ?? "").toLowerCase())) {
+          brandVariants.add((a.alias ?? "").toLowerCase());
+        }
+      }
+
+      // Authoritative set of stores carrying any own-brand (post alias resolution)
+      const myStoreIds = new Set<string>(
+        (myStoresRes.data ?? []).map((r: any) => r.intel_store_id),
       );
 
-      // Most-recent snapshot per store
+      // Most-recent snapshot per store — used for stock-risk + noData detection
       const byStore: Record<string, { data: { b?: string }[]; date: string }> = {};
       for (const s of snapsRes.data ?? []) {
         if (!byStore[s.intel_store_id]) {
@@ -91,24 +113,26 @@ export function DashboardMap() {
       for (const store of storesRes.data ?? []) {
         if (!store.latitude || !store.longitude) continue;
         const snap = byStore[store.id];
-        let type: PinType;
+        const isMine = myStoreIds.has(store.id);
+
+        // Count of my SKUs in the last snapshot, alias-aware
         let myProductCount = 0;
+        if (snap) {
+          myProductCount = snap.data.filter(
+            (p) => p.b && brandVariants.has(p.b.toLowerCase()) && !isExcludedBrand(p.b),
+          ).length;
+        }
 
-        if (!snap) {
-          type = "noData";
+        let type: PinType;
+        if (isMine) {
+          // The RPC confirms the brand is present; stock-risk tier kicks in
+          // when the latest snapshot shows < 3 of my SKUs (they might be
+          // running low). Otherwise it's a healthy green pin.
+          type = (snap && myProductCount > 0 && myProductCount < 3) ? "stockRisk" : "myStore";
+        } else if (snap) {
+          type = "gap";
         } else {
-          const products = snap.data ?? [];
-          const myProducts = products.filter(
-            (p) => p.b && ownBrandNames.has(p.b.toLowerCase()) && !isExcludedBrand(p.b)
-          );
-          myProductCount = myProducts.length;
-
-          if (myProductCount > 0) {
-            // Stock-out risk: has my brand but very few products (< 3)
-            type = myProductCount < 3 ? "stockRisk" : "myStore";
-          } else {
-            type = "gap";
-          }
+          type = "noData";
         }
 
         result.push({
