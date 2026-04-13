@@ -1541,18 +1541,29 @@ function GapAnalysis() {
 
 type Tab = { id: TabId; label: string; icon: React.ElementType };
 
-const TABS: Tab[] = [
-  { id: "brands",       label: "Brand Rankings",     icon: Tag        },
-  { id: "categories",   label: "Category Breakdown",  icon: Package    },
-  { id: "coverage",     label: "Coverage Summary",    icon: BarChart2  },
-  { id: "prices",       label: "Price Intelligence",  icon: DollarSign },
-  { id: "leaderboard",  label: "Store Leaderboard",   icon: Trophy     },
-  { id: "distribution", label: "Brand Distribution",  icon: LayoutList },
-  { id: "gap",          label: "Gap Analysis",        icon: Target     },
-  { id: "saturation",   label: "Market Saturation",   icon: Globe      },
-  { id: "velocity",     label: "Sell-Through",        icon: Zap        },
-  { id: "custom",       label: "Report Builder",      icon: Settings2  },
+const TAB_GROUPS = [
+  {
+    label: "Market Intelligence",
+    tabs: [
+      { id: "brands"       as TabId, label: "Brands",       icon: Tag        },
+      { id: "categories"   as TabId, label: "Categories",   icon: Package    },
+      { id: "coverage"     as TabId, label: "Coverage",     icon: BarChart2  },
+      { id: "prices"       as TabId, label: "Prices",       icon: DollarSign },
+      { id: "leaderboard"  as TabId, label: "Leaderboard",  icon: Trophy     },
+      { id: "distribution" as TabId, label: "Distribution", icon: LayoutList },
+      { id: "gap"          as TabId, label: "Gap Analysis",  icon: Target     },
+    ],
+  },
+  {
+    label: "Advanced",
+    tabs: [
+      { id: "saturation" as TabId, label: "Market Saturation", icon: Globe     },
+      { id: "velocity"   as TabId, label: "Sell-Through",      icon: Zap       },
+      { id: "custom"     as TabId, label: "Report Builder",    icon: Settings2 },
+    ],
+  },
 ];
+
 
 export function Reports() {
   const [tab, setTab] = useState<TabId>("brands");
@@ -1571,21 +1582,31 @@ export function Reports() {
         <p className="text-sm text-muted-foreground mt-1">Market intelligence — data loads per tab</p>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex gap-0 border-b border-border overflow-x-auto">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => switchTab(id)}
-            className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
-              tab === id
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-            }`}
-          >
-            <Icon className="w-3.5 h-3.5" />
-            {label}
-          </button>
+      {/* Tab bar — two rows so all 10 tabs are always visible */}
+      <div className="space-y-0">
+        {TAB_GROUPS.map((group, gi) => (
+          <div key={gi}>
+            <div className="flex items-center gap-0 border-b border-border overflow-x-auto">
+              <span className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/50 px-2 shrink-0 hidden sm:block">
+                {group.label}
+              </span>
+              {gi > 0 && <div className="w-px h-4 bg-border mx-1 shrink-0 hidden sm:block" />}
+              {group.tabs.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => switchTab(id)}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-[12px] font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
+                    tab === id
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                  }`}
+                >
+                  <Icon className="w-3 h-3 shrink-0" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 
