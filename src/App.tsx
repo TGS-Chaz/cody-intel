@@ -14,6 +14,7 @@ import { Reports } from "@/pages/Reports";
 import { AskCody } from "@/pages/AskCody";
 import { Settings } from "@/pages/Settings";
 import { Alerts } from "@/pages/Alerts";
+import { Trends } from "@/pages/Trends";
 import StoreLocatorWidget from "@/pages/StoreLocatorWidget";
 import { WidgetEmbed } from "@/pages/WidgetEmbed";
 
@@ -44,6 +45,7 @@ function ProtectedRoutes() {
             <Route path="reports" element={<Reports />} />
             <Route path="ask" element={<AskCody />} />
             <Route path="alerts" element={<Alerts />} />
+            <Route path="trends" element={<Trends />} />
             <Route path="settings" element={<Settings />} />
             <Route path="widget" element={<WidgetEmbed />} />
           </Route>
