@@ -1539,7 +1539,6 @@ function GapAnalysis() {
 
 // ── Main Reports page ─────────────────────────────────────────────────────────
 
-type Tab = { id: TabId; label: string; icon: React.ElementType };
 
 const TAB_GROUPS = [
   {
