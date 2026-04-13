@@ -14,6 +14,8 @@ import { Reports } from "@/pages/Reports";
 import { AskCody } from "@/pages/AskCody";
 import { Settings } from "@/pages/Settings";
 import { Alerts } from "@/pages/Alerts";
+import StoreLocatorWidget from "@/pages/StoreLocatorWidget";
+import { WidgetEmbed } from "@/pages/WidgetEmbed";
 
 function ProtectedRoutes() {
   const { session, loading } = useAuth();
@@ -43,6 +45,7 @@ function ProtectedRoutes() {
             <Route path="ask" element={<AskCody />} />
             <Route path="alerts" element={<Alerts />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="widget" element={<WidgetEmbed />} />
           </Route>
         </Routes>
       </ThemeProvider>
@@ -58,6 +61,7 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/widget/store-locator" element={<StoreLocatorWidget />} />
           <Route path="/*" element={<ProtectedRoutes />} />
         </Routes>
       </AuthProvider>
