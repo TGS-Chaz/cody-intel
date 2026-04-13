@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { useOrg } from "@/lib/org";
 import type { IntelStore } from "@/lib/types";
-import { Search, ChevronRight, WifiOff, ArrowUpDown } from "lucide-react";
+import { Search, ChevronRight, WifiOff, ArrowUpDown, Tag, Plus, X } from "lucide-react";
 
 const PLATFORMS = ["dutchie-api", "leafly", "weedmaps", "posabit-api", "jane"];
 const PLATFORM_LABELS: Record<string, string> = {
@@ -26,6 +27,148 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   closed:  { label: "Closed",  cls: "text-red-400 bg-red-400/10" },
   unknown: { label: "Unknown", cls: "text-amber-400 bg-amber-400/10" },
 };
+
+// ── Tag system ────────────────────────────────────────────────────────────────
+
+const PREDEFINED_TAGS = [
+  "Priority",
+  "Key Account",
+  "New Target",
+  "Credit Risk",
+  "Seasonal",
+  "High Volume",
+  "Low Volume",
+];
+
+const TAG_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  "Priority":     { bg: "bg-rose-500/10",   text: "text-rose-500",   border: "border-rose-500/30" },
+  "Key Account":  { bg: "bg-primary/10",    text: "text-primary",    border: "border-primary/30" },
+  "New Target":   { bg: "bg-blue-500/10",   text: "text-blue-500",   border: "border-blue-500/30" },
+  "Credit Risk":  { bg: "bg-orange-500/10", text: "text-orange-500", border: "border-orange-500/30" },
+  "Seasonal":     { bg: "bg-purple-500/10", text: "text-purple-500", border: "border-purple-500/30" },
+  "High Volume":  { bg: "bg-emerald-500/10",text: "text-emerald-500",border: "border-emerald-500/30" },
+  "Low Volume":   { bg: "bg-gray-500/10",   text: "text-gray-400",   border: "border-gray-500/30" },
+};
+
+function hashTagColor(tag: string) {
+  if (TAG_COLORS[tag]) return TAG_COLORS[tag];
+  // Deterministic color from tag string
+  const palette = [
+    { bg: "bg-pink-500/10",   text: "text-pink-500",   border: "border-pink-500/30" },
+    { bg: "bg-cyan-500/10",   text: "text-cyan-500",   border: "border-cyan-500/30" },
+    { bg: "bg-indigo-500/10", text: "text-indigo-500", border: "border-indigo-500/30" },
+    { bg: "bg-teal-500/10",   text: "text-teal-500",   border: "border-teal-500/30" },
+    { bg: "bg-yellow-500/10", text: "text-yellow-500", border: "border-yellow-500/30" },
+  ];
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) & 0xffff;
+  return palette[h % palette.length];
+}
+
+function TagPill({ tag, onRemove }: { tag: string; onRemove?: () => void }) {
+  const colors = hashTagColor(tag);
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${colors.bg} ${colors.text} ${colors.border}`}
+    >
+      {tag}
+      {onRemove && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="hover:opacity-70 transition-opacity ml-0.5"
+          title={`Remove ${tag}`}
+        >
+          <X className="w-2.5 h-2.5" />
+        </button>
+      )}
+    </span>
+  );
+}
+
+interface TagDropdownProps {
+  storeId: string;
+  orgId: string;
+  currentTags: string[];
+  onTagsChange: (storeId: string, tags: string[]) => void;
+  onClose: () => void;
+}
+
+function TagDropdown({ storeId, orgId, currentTags, onTagsChange, onClose }: TagDropdownProps) {
+  const [customTag, setCustomTag] = useState("");
+  const [saving, setSaving] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [onClose]);
+
+  async function addTag(tag: string) {
+    if (!tag.trim() || saving) return;
+    const t = tag.trim();
+    if (currentTags.includes(t)) return;
+    setSaving(true);
+    await supabase.from("store_tags").upsert(
+      { intel_store_id: storeId, tag: t, org_id: orgId },
+      { onConflict: "intel_store_id,tag,org_id" }
+    );
+    onTagsChange(storeId, [...currentTags, t]);
+    setSaving(false);
+    setCustomTag("");
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="absolute z-50 right-0 top-full mt-1 w-52 rounded-xl border border-border bg-popover shadow-lg overflow-hidden"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="px-3 py-2 border-b border-border">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Add Tag</p>
+      </div>
+      {/* Predefined */}
+      <div className="p-2 space-y-0.5">
+        {PREDEFINED_TAGS.map((t) => (
+          <button
+            key={t}
+            onClick={() => addTag(t)}
+            disabled={currentTags.includes(t)}
+            className={`w-full text-left px-2.5 py-1.5 rounded-md text-[12px] transition-colors ${
+              currentTags.includes(t)
+                ? "opacity-40 cursor-default"
+                : "hover:bg-accent text-foreground"
+            }`}
+          >
+            <TagPill tag={t} />
+          </button>
+        ))}
+      </div>
+      {/* Custom tag input */}
+      <div className="px-2 pb-2">
+        <div className="flex gap-1">
+          <input
+            value={customTag}
+            onChange={(e) => setCustomTag(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") addTag(customTag); }}
+            placeholder="Custom tag…"
+            className="flex-1 px-2 py-1 text-[12px] rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+          />
+          <button
+            onClick={() => addTag(customTag)}
+            disabled={!customTag.trim() || saving}
+            className="px-2 py-1 rounded-md bg-primary text-primary-foreground text-[12px] disabled:opacity-40 hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type SortKey = "name" | "city" | "products";
 
@@ -51,8 +194,12 @@ const selectCls =
   "px-2.5 py-1.5 rounded-md border border-border bg-card text-sm text-foreground " +
   "focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors";
 
+// ── Main Component ────────────────────────────────────────────────────────────
+
 export function StoreDirectory() {
   const navigate = useNavigate();
+  const { orgId } = useOrg();
+
   const [stores, setStores]     = useState<IntelStore[]>([]);
   const [menuMap, setMenuMap]   = useState<Record<string, string[]>>({});
   const [loading, setLoading]   = useState(true);
@@ -62,8 +209,13 @@ export function StoreDirectory() {
   const [statusFilter, setStatusFilter]   = useState("active");
   const [menuFilter, setMenuFilter]       = useState<"" | "has" | "none">("");
   const [platformFilter, setPlatformFilter] = useState("");
+  const [tagFilter, setTagFilter]         = useState("");
   const [sortKey, setSortKey]   = useState<SortKey>("name");
   const [sortAsc, setSortAsc]   = useState(true);
+
+  // Tags: storeId -> string[]
+  const [storeTags, setStoreTags] = useState<Record<string, string[]>>({});
+  const [openTagMenu, setOpenTagMenu] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -87,6 +239,40 @@ export function StoreDirectory() {
     load();
   }, []);
 
+  // Load tags separately so it doesn't block initial render
+  useEffect(() => {
+    async function loadTags() {
+      const { data } = await supabase
+        .from("store_tags")
+        .select("intel_store_id, tag");
+      if (!data) return;
+      const map: Record<string, string[]> = {};
+      for (const row of data) {
+        if (!map[row.intel_store_id]) map[row.intel_store_id] = [];
+        map[row.intel_store_id].push(row.tag);
+      }
+      setStoreTags(map);
+    }
+    loadTags();
+  }, []);
+
+  function handleTagsChange(storeId: string, tags: string[]) {
+    setStoreTags((prev) => ({ ...prev, [storeId]: tags }));
+  }
+
+  async function removeTag(storeId: string, tag: string) {
+    await supabase
+      .from("store_tags")
+      .delete()
+      .eq("intel_store_id", storeId)
+      .eq("tag", tag)
+      .eq("org_id", orgId ?? "");
+    setStoreTags((prev) => ({
+      ...prev,
+      [storeId]: (prev[storeId] ?? []).filter((t) => t !== tag),
+    }));
+  }
+
   function toggleSort(k: SortKey) {
     if (sortKey === k) setSortAsc((a) => !a);
     else { setSortKey(k); setSortAsc(true); }
@@ -94,6 +280,9 @@ export function StoreDirectory() {
 
   const cities   = [...new Set(stores.map((s) => s.city).filter(Boolean)   as string[])].sort();
   const counties = [...new Set(stores.map((s) => s.county).filter(Boolean) as string[])].sort();
+
+  // All tags used (for filter dropdown)
+  const allTagsUsed = [...new Set(Object.values(storeTags).flat())].sort();
 
   const filtered = stores
     .filter((s) => {
@@ -107,6 +296,7 @@ export function StoreDirectory() {
       if (platformFilter && !(menuMap[s.id] ?? []).includes(platformFilter)) return false;
       if (menuFilter === "has"  && (menuMap[s.id] ?? []).length === 0) return false;
       if (menuFilter === "none" && (menuMap[s.id] ?? []).length  >  0) return false;
+      if (tagFilter && !(storeTags[s.id] ?? []).includes(tagFilter)) return false;
       return true;
     })
     .sort((a, b) => {
@@ -174,6 +364,14 @@ export function StoreDirectory() {
           <option value="">All Platforms</option>
           {PLATFORMS.map((p) => <option key={p} value={p}>{PLATFORM_LABELS[p]}</option>)}
         </select>
+        <select
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value)}
+          className={`${selectCls} ${tagFilter ? "border-primary text-primary" : ""}`}
+        >
+          <option value="">All Tags</option>
+          {allTagsUsed.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
       </div>
 
       <div className="rounded-lg border border-border bg-card overflow-hidden shadow-premium">
@@ -197,23 +395,27 @@ export function StoreDirectory() {
                   <SortBtn label="Products" k="products" sortKey={sortKey} sortAsc={sortAsc} onToggle={toggleSort} />
                 </th>
                 <th className={thCls}>Platforms</th>
+                <th className={`${thCls} hidden xl:table-cell`}>
+                  <span className="flex items-center gap-1"><Tag className="w-3 h-3" />Tags</span>
+                </th>
                 <th className="w-8" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">
                     No stores match your filters.
                   </td>
                 </tr>
               ) : (
                 filtered.map((store) => {
                   const badge = STATUS_BADGE[store.status ?? "unknown"] ?? STATUS_BADGE.unknown;
+                  const tags = storeTags[store.id] ?? [];
                   return (
                     <tr
                       key={store.id}
-                      className="hover:bg-accent/40 cursor-pointer transition-colors duration-100"
+                      className="hover:bg-accent/40 cursor-pointer transition-colors duration-100 group"
                       onClick={() => navigate(`/stores/${store.id}`)}
                     >
                       <td className="px-4 py-2.5 font-medium text-foreground max-w-[200px] truncate">
@@ -265,6 +467,41 @@ export function StoreDirectory() {
                               );
                             });
                           })()}
+                        </div>
+                      </td>
+                      {/* Tags column */}
+                      <td className="px-4 py-2 hidden xl:table-cell" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 flex-wrap min-w-[120px]">
+                          {tags.map((t) => (
+                            <TagPill
+                              key={t}
+                              tag={t}
+                              onRemove={orgId ? () => removeTag(store.id, t) : undefined}
+                            />
+                          ))}
+                          {/* Add tag button */}
+                          <div className="relative">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenTagMenu(openTagMenu === store.id ? null : store.id);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent border border-dashed border-border"
+                              title="Add tag"
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                              Tag
+                            </button>
+                            {openTagMenu === store.id && orgId && (
+                              <TagDropdown
+                                storeId={store.id}
+                                orgId={orgId}
+                                currentTags={tags}
+                                onTagsChange={handleTagsChange}
+                                onClose={() => setOpenTagMenu(null)}
+                              />
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-2.5 text-muted-foreground">
