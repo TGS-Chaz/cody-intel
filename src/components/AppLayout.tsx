@@ -19,6 +19,7 @@ import {
   Package,
   Users2,
   Newspaper,
+  Code2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -40,6 +41,7 @@ const navItems = [
   { to: "/briefing",  icon: Newspaper,       label: "Briefing" },
   { to: "/alerts",    icon: Bell,            label: "Alerts" },
   { to: "/widget",    icon: Globe,           label: "Widget" },
+  { to: "/api-docs",  icon: Code2,           label: "API" },
   { to: "/settings",  icon: Settings,        label: "Settings" },
 ];
 

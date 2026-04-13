@@ -20,6 +20,7 @@ import StoreLocatorWidget from "@/pages/StoreLocatorWidget";
 import { WidgetEmbed } from "@/pages/WidgetEmbed";
 import { Competitors } from "@/pages/Competitors";
 import { WeeklyBriefing } from "@/pages/WeeklyBriefing";
+import { ApiDocs } from "@/pages/ApiDocs";
 
 function ProtectedRoutes() {
   const { session, loading } = useAuth();
@@ -54,6 +55,7 @@ function ProtectedRoutes() {
             <Route path="widget" element={<WidgetEmbed />} />
             <Route path="competitors" element={<Competitors />} />
             <Route path="briefing" element={<WeeklyBriefing />} />
+            <Route path="api-docs" element={<ApiDocs />} />
           </Route>
         </Routes>
       </ThemeProvider>
