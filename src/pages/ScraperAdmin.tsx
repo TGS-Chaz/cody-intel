@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import type { IntelStore } from "@/lib/types";
 import {
   Play, Square, CheckCircle2, AlertCircle, RefreshCw, AlertTriangle,
-  Layers, Link2, Search, X, Zap,
+  Layers, Link2, Search, X, Zap, Globe,
 } from "lucide-react";
 
 // ─── Platform definitions ─────────────────────────────────────────────────────
@@ -363,6 +363,14 @@ export function ScraperAdmin() {
   const [scrapedIds, setScrapedIds] = useState<Set<string>>(new Set());
   const [scrapeErrors, setScrapeErrors] = useState<Record<string, string>>({});
 
+  // Website finder state
+  const [wfRunning, setWfRunning] = useState(false);
+  const [wfTotal, setWfTotal] = useState<number | null>(null);
+  const [wfDone, setWfDone] = useState(0);
+  const [wfProgress, setWfProgress] = useState("");
+  const [wfLog, setWfLog] = useState<LogEntry[]>([]);
+  const wfAbortRef = useRef<AbortController | null>(null);
+
   const abortRefs = useRef<Record<string, AbortController>>({});
   const scrapeAllAbortRef = useRef<AbortController | null>(null);
   const pollRefs = useRef<Record<string, ReturnType<typeof setInterval>>>({});
@@ -510,6 +518,67 @@ export function ScraperAdmin() {
   const handleStopAll = () => {
     scrapeAllAbortRef.current?.abort();
     for (const id of Object.keys(abortRefs.current)) abortRefs.current[id]?.abort();
+  };
+
+  // ── Website finder ─────────────────────────────────────────────────────────
+
+  const handleFindWebsites = async () => {
+    if (wfRunning) { wfAbortRef.current?.abort(); return; }
+    const ctrl = new AbortController();
+    wfAbortRef.current = ctrl;
+    setWfRunning(true);
+    setWfLog([]);
+    setWfDone(0);
+    setWfProgress("Loading stores without websites…");
+    try {
+      const { session, supabaseUrl, anonKey } = await getCallParams();
+      const discRes = await fetch(`${supabaseUrl}/functions/v1/scrape-posabit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}`, apikey: anonKey },
+        body: JSON.stringify({ action: "find-websites-discover" }),
+        signal: ctrl.signal,
+      });
+      const discData = await discRes.json();
+      const candidates: any[] = discData.candidates ?? [];
+      const total: number = discData.total ?? candidates.length;
+      setWfTotal(total);
+      if (!candidates.length) { setWfProgress("All stores already have websites!"); return; }
+
+      const BATCH = 2;
+      let done = 0;
+      for (let i = 0; i < candidates.length; i += BATCH) {
+        if (ctrl.signal.aborted) break;
+        const batch = candidates.slice(i, i + BATCH);
+        setWfProgress(`Searching ${batch[0].name}${batch[0].intelCity ? `, ${batch[0].intelCity}` : ""}… (${done}/${total})`);
+        try {
+          const batchRes = await fetch(`${supabaseUrl}/functions/v1/scrape-posabit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}`, apikey: anonKey },
+            body: JSON.stringify({ action: "find-websites-batch", stores: batch }),
+            signal: ctrl.signal,
+          });
+          if (batchRes.ok) {
+            const batchData = await batchRes.json();
+            const entries: LogEntry[] = (batchData.results ?? []).map((r: any) => ({
+              storeName: r.store,
+              city: r.city ?? null,
+              status: r.status as LogEntryStatus,
+              reason: r.reason ?? r.website ?? undefined,
+              timestamp: Date.now(),
+            }));
+            setWfLog((prev) => [...prev, ...entries]);
+          }
+        } catch { /* ignore per-batch errors, keep looping */ }
+        done += batch.length;
+        setWfDone(done);
+      }
+      setWfProgress(ctrl.signal.aborted ? "Stopped" : `Done — ${done} stores searched`);
+    } catch (err: any) {
+      if (err.name !== "AbortError") setWfProgress(`Error: ${err.message}`);
+      else setWfProgress("Stopped");
+    } finally {
+      setWfRunning(false);
+    }
   };
 
   // ── Linking handlers ───────────────────────────────────────────────────────
@@ -748,6 +817,61 @@ export function ScraperAdmin() {
               </p>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Total products scraped</p>
             </div>
+          </div>
+
+          {/* Website Finder */}
+          <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-muted-foreground" />
+                  Website Finder + POSaBit Detection
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  DuckDuckGo-searches each store without a website URL, saves the result, and auto-detects POSaBit menus.
+                  {wfTotal !== null && !wfRunning && (
+                    <span className="ml-1 text-amber-400">{wfTotal - wfDone > 0 ? `${wfTotal - wfDone} stores remaining` : "All stores have websites"}</span>
+                  )}
+                </p>
+              </div>
+              <button
+                onClick={handleFindWebsites}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-colors shrink-0 ${
+                  wfRunning
+                    ? "border border-destructive/50 text-destructive hover:bg-destructive/10"
+                    : "text-primary-foreground bg-primary hover:bg-primary/90"
+                }`}
+              >
+                {wfRunning
+                  ? <><Square className="w-3.5 h-3.5" />Stop</>
+                  : <><Globe className="w-3.5 h-3.5" />Find Websites + POSaBit</>
+                }
+              </button>
+            </div>
+
+            {(wfRunning || wfProgress || wfLog.length > 0) && (
+              <div className="space-y-2">
+                {wfProgress && (
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-[11px] text-muted-foreground font-mono truncate">
+                      {wfRunning && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse mr-1.5 align-middle" />}
+                      {wfProgress}
+                    </p>
+                    {wfTotal !== null && wfDone > 0 && (
+                      <p className="text-[11px] text-muted-foreground shrink-0">
+                        <span className="text-foreground font-semibold">{wfDone}</span> / {wfTotal}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {wfTotal !== null && wfDone > 0 && (
+                  <div className="h-1 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round((wfDone / wfTotal) * 100)}%` }} />
+                  </div>
+                )}
+                <ScrapeLog entries={wfLog} />
+              </div>
+            )}
           </div>
         </>
       )}
