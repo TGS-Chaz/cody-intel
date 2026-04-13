@@ -27,13 +27,13 @@ export function WeightedDistribution({ orgId }: { orgId: string }) {
       const totalStores  = stores.length;
       const totalVolume  = stores.reduce((s, st) => s + (st.total_products ?? 0), 0);
 
-      // Which stores have my products?
-      const { data: matches } = await supabase
-        .from("product_matches")
-        .select("intel_store_id")
-        .in("user_product_id", products.map(p => p.id));
-
-      const myStoreIds = new Set((matches ?? []).map(m => m.intel_store_id));
+      // Which stores carry any of my brands? Uses raw_brand (with alias
+      // resolution) so the metric reflects distribution presence, not
+      // SKU-level strain matches.
+      const { data: storeRows } = await supabase.rpc("get_own_brand_stores", {
+        p_org_id: orgId,
+      });
+      const myStoreIds = new Set<string>((storeRows ?? []).map((r: any) => r.intel_store_id));
       const storesWithMe = myStoreIds.size;
       const myVolume = stores
         .filter(s => myStoreIds.has(s.id))

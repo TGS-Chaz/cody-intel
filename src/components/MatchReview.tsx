@@ -24,21 +24,17 @@ interface MatchRow {
 }
 
 const METHOD_COLOR: Record<string, string> = {
-  strain_exact:   "text-emerald-400",
-  strain_partial: "text-blue-400",
-  cat_weight:     "text-purple-400",
-  brand_category: "text-amber-400",
-  brand_only:     "text-muted-foreground",
+  strain_exact:           "text-emerald-400",
+  strain_partial:         "text-blue-400",
+  brand_category_weight:  "text-purple-400",
 };
 
 function methodLabel(m: string) {
   switch (m) {
-    case "strain_exact":   return "Strain match";
-    case "strain_partial": return "Strain partial";
-    case "cat_weight":     return "Brand + cat + weight";
-    case "brand_category": return "Brand + category";
-    case "brand_only":     return "Brand only";
-    default:               return m;
+    case "strain_exact":          return "Strain match";
+    case "strain_partial":        return "Strain partial";
+    case "brand_category_weight": return "Brand + category + weight";
+    default:                      return m;
   }
 }
 
@@ -64,6 +60,7 @@ export function MatchReview({ orgId }: { orgId: string }) {
       .from("product_matches")
       .select("id, confidence, match_method, verified, user_product_id, menu_item_id, intel_store_id")
       .in("user_product_id", Array.from(productMap.keys()))
+      .gte("confidence", 0.70)
       .order("confidence", { ascending: false })
       .limit(500);
     if (filter === "pending") q = q.eq("verified", false);

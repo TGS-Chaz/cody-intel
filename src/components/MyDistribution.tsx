@@ -38,20 +38,26 @@ export function MyDistribution({ orgId }: { orgId: string }) {
         return;
       }
 
-      // 3) All matches for these products
-      const { data: matches } = await supabase
-        .from("product_matches")
-        .select("intel_store_id, user_product_id, verified")
-        .in("user_product_id", productIds);
+      // 3) Distribution = stores where ANY of my brands appear in menu_items.
+      //    Uses raw_brand matching (with alias resolution) rather than
+      //    product_matches so it tracks market presence, not SKU-level matches.
+      const { data: storeRows } = await supabase.rpc("get_own_brand_stores", {
+        p_org_id: orgId,
+      });
+      const storesSet = new Set<string>((storeRows ?? []).map((r: any) => r.intel_store_id));
 
-      const storesSet = new Set((matches ?? []).map(m => m.intel_store_id));
-      const verifiedCount = (matches ?? []).filter(m => m.verified).length;
+      // Verified placements = count of SKU-level strain matches a rep has confirmed
+      const { count: verifiedCount } = await supabase
+        .from("product_matches")
+        .select("id", { count: "exact", head: true })
+        .in("user_product_id", productIds)
+        .eq("verified", true);
 
       if (!cancelled) {
         setStats({
           totalStores:        totalStores ?? 0,
           storesWithMe:       storesSet.size,
-          verifiedPlacements: verifiedCount,
+          verifiedPlacements: verifiedCount ?? 0,
           uniqueProducts:     productIds.length,
         });
         setLoading(false);
