@@ -1,1043 +1,880 @@
-import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
-import { useOrg } from "@/lib/org";
-import { callEdgeFunction } from "@/lib/edge-function";
+import { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  Package, Plus, Search, Upload, Check, X, Tag, Edit2, Trash2, RefreshCw, ChevronDown,
+  Package, Search, X, Plus, Edit2, Trash2, Save, AlertCircle, Loader2,
+  ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-interface UserBrand {
-  id: string;
-  brand_name: string;
-  is_own_brand: boolean;
-  created_at: string;
+interface DbProduct {
+  id:                string;
+  name:              string;
+  farm:              string | null;
+  type:              string | null;
+  strain:            string | null;
+  description:       string | null;
+  available:         boolean | null;
+  unit:              string | null;
+  price_per_unit:    number | null;
+  thc_percentage:    number | null;
+  product_image_url: string | null;
+  source:            string | null;
+  org_id:            string;
 }
 
-interface UserProduct {
-  id: string;
-  brand_id: string | null;
-  product_name: string;
-  category: string | null;
-  weight: string | null;
-  unit_price: number | null;
-  thc_range: string | null;
+interface ProductGroup {
+  name:        string;
+  farm:        string;
+  type:        string | null;
+  strain:      string | null;
   description: string | null;
-  aliases: string[] | null;
-  active: boolean;
-  created_at: string;
-  user_brand?: { brand_name: string } | null;
+  available:   boolean;
+  imageUrl:    string | null;
+  variants:    DbProduct[];
+  minPrice:    number | null;
+  maxPrice:    number | null;
 }
 
-interface ProductMatch {
-  id: string;
-  confidence: number;
-  match_method: string;
-  verified: boolean;
-  user_product: { product_name: string; user_brand: { brand_name: string } | null } | null;
-  menu_item: { raw_name: string; raw_brand: string | null } | null;
-  intel_store: { name: string; city: string | null } | null;
-}
+type SortKey = "name" | "farm" | "type" | "minPrice";
+type SortDir = "asc" | "desc";
 
-type TabId = "brands" | "products" | "matches";
+// ─── Constants ───────────────────────────────────────────────────────────────
 
-const thCls = "text-left px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest";
+const FARMS = [
+  "Desert Valley Growers",
+  "Painted Rooster Cannabis Co",
+  "Kush Mountain Cannabis",
+];
 
-const CATEGORY_SUGGESTIONS = ["Flower", "Pre-roll", "Vape", "Concentrate", "Edible", "Tincture", "Topical"];
+const PRODUCT_TYPES = [
+  "flower", "concentrate", "pre_roll", "vape", "beverage", "edible", "cannagar", "other",
+];
 
-const METHOD_COLORS: Record<string, string> = {
-  exact: "bg-emerald-500/15 text-emerald-400",
-  alias: "bg-blue-500/15 text-blue-400",
-  brand_category_weight: "bg-purple-500/15 text-purple-400",
-  word_overlap: "bg-amber-500/15 text-amber-400",
+const FARM_COLORS: Record<string, { text: string; bg: string }> = {
+  "Desert Valley Growers":       { text: "#00D4AA", bg: "hsl(168 100% 42% / 0.07)" },
+  "Painted Rooster Cannabis Co": { text: "#A78BFA", bg: "hsl(265 83% 76% / 0.07)"  },
+  "Kush Mountain Cannabis":      { text: "#10B981", bg: "hsl(160 84% 39% / 0.07)"  },
 };
-
-// ── Shared ────────────────────────────────────────────────────────────────────
-
-function inputCls(extra = "") {
-  return `w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary ${extra}`;
+function farmColor(name: string) {
+  return FARM_COLORS[name] ?? { text: "hsl(217 91% 60%)", bg: "hsl(217 91% 60% / 0.07)" };
 }
 
-function primaryBtn(extra = "") {
-  return `px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors ${extra}`;
+function productFarm(p: DbProduct): string {
+  return (p.farm ?? "").trim() || "Other";
 }
 
-function secondaryBtn(extra = "") {
-  return `px-3 py-1.5 rounded-md bg-secondary text-sm text-muted-foreground hover:text-foreground transition-colors ${extra}`;
+function friendlyError(msg: string): string {
+  if (msg.includes("row-level") || msg.includes("RLS") || msg.includes("policy"))
+    return "Permission denied. Check RLS policies on the products table.";
+  if (msg.includes("does not exist"))
+    return "Table not found. Make sure the products table exists.";
+  return msg;
 }
 
-// ── TAB 1: Brands ─────────────────────────────────────────────────────────────
-
-function BrandsTab({ orgId }: { orgId: string }) {
-  const [brands, setBrands]       = useState<UserBrand[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [saving, setSaving]       = useState(false);
-  const [newName, setNewName]     = useState("");
-  const [newIsOwn, setNewIsOwn]   = useState(true);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("user_brands")
-      .select("id, brand_name, is_own_brand, created_at")
-      .eq("org_id", orgId)
-      .order("brand_name");
-    setBrands(data ?? []);
-    setLoading(false);
-  }, [orgId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function addBrand() {
-    if (!newName.trim()) return;
-    setSaving(true);
-    await supabase.from("user_brands").insert({ org_id: orgId, brand_name: newName.trim(), is_own_brand: newIsOwn });
-    setNewName("");
-    setSaving(false);
-    await load();
+function groupProducts(products: DbProduct[]): ProductGroup[] {
+  const map = new Map<string, DbProduct[]>();
+  for (const p of products) {
+    const key = `${p.name}|||${productFarm(p)}`;
+    const arr = map.get(key) ?? [];
+    arr.push(p);
+    map.set(key, arr);
   }
-
-  async function toggleOwn(brand: UserBrand) {
-    await supabase.from("user_brands").update({ is_own_brand: !brand.is_own_brand }).eq("id", brand.id);
-    await load();
+  const groups: ProductGroup[] = [];
+  for (const variants of map.values()) {
+    const first = variants[0];
+    const prices = variants
+      .map(v => (v.price_per_unit == null ? null : Number(v.price_per_unit)))
+      .filter((p): p is number => p != null);
+    groups.push({
+      name:        first.name,
+      farm:        productFarm(first),
+      type:        first.type ?? null,
+      strain:      (first.strain ?? "").trim() || null,
+      description: first.description ?? null,
+      available:   variants.some(v => v.available !== false),
+      imageUrl:    variants.find(v => v.product_image_url)?.product_image_url ?? null,
+      variants:    variants.sort((a, b) => (Number(a.price_per_unit) || 0) - (Number(b.price_per_unit) || 0)),
+      minPrice:    prices.length ? Math.min(...prices) : null,
+      maxPrice:    prices.length ? Math.max(...prices) : null,
+    });
   }
+  return groups.sort((a, b) => a.name.localeCompare(b.name));
+}
 
-  async function deleteBrand(id: string) {
-    await supabase.from("user_brands").delete().eq("id", id);
-    setDeleteConfirm(null);
-    await load();
-  }
+function priceRange(g: ProductGroup): string {
+  if (g.minPrice == null) return "—";
+  if (g.minPrice === g.maxPrice) return `$${g.minPrice.toFixed(2)}`;
+  return `$${g.minPrice.toFixed(2)} – $${g.maxPrice!.toFixed(2)}`;
+}
 
+// ─── Sort header ─────────────────────────────────────────────────────────────
+
+function SortableHeader({
+  label, sortKey, sort, onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: { key: SortKey; dir: SortDir } | null;
+  onSort: (k: SortKey) => void;
+}) {
+  const active = sort?.key === sortKey;
+  const Icon = !active ? ArrowUpDown : sort?.dir === "asc" ? ArrowUp : ArrowDown;
   return (
-    <div className="space-y-4">
-      {/* Add brand form */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Add Brand</p>
-        <div className="flex flex-wrap gap-3 items-end">
-          <div className="flex-1 min-w-[200px]">
+    <button
+      onClick={() => onSort(sortKey)}
+      className={`flex items-center gap-1 text-[11px] font-medium transition-colors ${
+        active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {label}
+      <Icon className="w-3 h-3" />
+    </button>
+  );
+}
+
+// ─── Size Editor ─────────────────────────────────────────────────────────────
+
+interface SizeRow { id?: string; unit: string; price: string }
+
+function SizeEditor({ sizes, onChange }: { sizes: SizeRow[]; onChange: (s: SizeRow[]) => void }) {
+  function update(i: number, field: "unit" | "price", value: string) {
+    const next = [...sizes];
+    next[i] = { ...next[i], [field]: value };
+    onChange(next);
+  }
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Sizes & Pricing</label>
+        <button
+          onClick={() => onChange([...sizes, { unit: "", price: "" }])}
+          className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 font-medium"
+        >
+          <Plus className="w-3 h-3" /> Add Size
+        </button>
+      </div>
+      {sizes.length === 0 && (
+        <p className="text-[11px] text-muted-foreground py-2">No sizes yet. Click "Add Size" to start.</p>
+      )}
+      {sizes.map((s, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="text-[10px] text-muted-foreground w-4 shrink-0 text-center">{i + 1}</span>
+          <input
+            value={s.unit}
+            onChange={e => update(i, "unit", e.target.value)}
+            placeholder="e.g. 3.5g (Eighth)"
+            className="flex-1 h-8 text-xs bg-secondary border border-border rounded-md px-2.5"
+          />
+          <div className="relative w-28 shrink-0">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
             <input
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && addBrand()}
-              placeholder="Brand name…"
-              className={inputCls()}
+              type="number" min={0} step={0.01}
+              value={s.price}
+              onChange={e => update(i, "price", e.target.value)}
+              placeholder="0.00"
+              className="h-8 w-full text-xs bg-secondary border border-border rounded-md pl-6 pr-2"
             />
           </div>
-          {/* Own / Competitor toggle */}
-          <div className="flex rounded-lg border border-border overflow-hidden text-sm">
-            <button
-              onClick={() => setNewIsOwn(true)}
-              className={`px-3 py-2 transition-colors ${newIsOwn ? "bg-teal-600 text-white" : "bg-background text-muted-foreground hover:text-foreground"}`}
-            >
-              My Brand
-            </button>
-            <button
-              onClick={() => setNewIsOwn(false)}
-              className={`px-3 py-2 transition-colors ${!newIsOwn ? "bg-orange-500 text-white" : "bg-background text-muted-foreground hover:text-foreground"}`}
-            >
-              Competitor
-            </button>
-          </div>
-          <button onClick={addBrand} disabled={saving || !newName.trim()} className={primaryBtn("disabled:opacity-50")}>
-            {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 inline -mt-0.5 mr-1" />}
-            Add Brand
+          <button
+            onClick={() => onChange(sizes.filter((_, idx) => idx !== i))}
+            className="p-1 text-muted-foreground hover:text-destructive shrink-0"
+          >
+            <X className="w-3 h-3" />
           </button>
         </div>
-      </div>
-
-      {/* Brand list */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">Loading…</div>
-        ) : brands.length === 0 ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">No brands yet. Add one above.</div>
-        ) : (
-          <div className="divide-y divide-border/40">
-            {brands.map(brand => (
-              <div key={brand.id} className="flex items-center gap-3 px-4 py-3 hover:bg-accent/20 transition-colors">
-                <span className="flex-1 text-sm font-medium text-foreground">{brand.brand_name}</span>
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${brand.is_own_brand ? "bg-teal-500/15 text-teal-400" : "bg-orange-500/15 text-orange-400"}`}>
-                  {brand.is_own_brand ? "My Brand" : "Competitor"}
-                </span>
-                <button
-                  onClick={() => toggleOwn(brand)}
-                  className={secondaryBtn("text-xs")}
-                  title="Toggle type"
-                >
-                  Switch to {brand.is_own_brand ? "Competitor" : "My Brand"}
-                </button>
-                {deleteConfirm === brand.id ? (
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground">Delete?</span>
-                    <button onClick={() => deleteBrand(brand.id)} className="px-2 py-1 rounded text-xs bg-red-600 text-white hover:bg-red-700 transition-colors">Yes</button>
-                    <button onClick={() => setDeleteConfirm(null)} className={secondaryBtn("text-xs")}>No</button>
-                  </div>
-                ) : (
-                  <button onClick={() => setDeleteConfirm(brand.id)} className="p-1.5 rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      ))}
     </div>
   );
 }
 
-// ── Product Form (shared for add + edit) ──────────────────────────────────────
+// ─── Modal ────────────────────────────────────────────────────────────────────
 
-interface ProductFormData {
-  brand_id: string;
-  product_name: string;
-  category: string;
-  weight: string;
-  unit_price: string;
-  thc_range: string;
-  description: string;
-  aliases: string[];
-  active: boolean;
-}
-
-const emptyForm = (): ProductFormData => ({
-  brand_id: "", product_name: "", category: "", weight: "",
-  unit_price: "", thc_range: "", description: "", aliases: [], active: true,
-});
-
-interface ProductFormProps {
-  ownBrands: UserBrand[];
-  initial?: ProductFormData;
-  onSave: (data: ProductFormData) => Promise<void>;
-  onCancel: () => void;
-  saving: boolean;
-}
-
-function ProductForm({ ownBrands, initial, onSave, onCancel, saving }: ProductFormProps) {
-  const [form, setForm] = useState<ProductFormData>(initial ?? emptyForm());
-  const [aliasInput, setAliasInput] = useState("");
-  const [catOpen, setCatOpen] = useState(false);
-
-  function set<K extends keyof ProductFormData>(k: K, v: ProductFormData[K]) {
-    setForm(f => ({ ...f, [k]: v }));
-  }
-
-  function addAlias() {
-    const trimmed = aliasInput.trim();
-    if (trimmed && !form.aliases.includes(trimmed)) {
-      set("aliases", [...form.aliases, trimmed]);
+function ProductModal({
+  group, orgId, onClose, onSaved,
+}: {
+  group:  ProductGroup | null; // null = new
+  orgId:  string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const isNew = !group;
+  const [name,        setName]        = useState(group?.name ?? "");
+  const [farm,        setFarm]        = useState(group?.farm ?? FARMS[0]);
+  const [type,        setType]        = useState(group?.type ?? "");
+  const [strain,      setStrain]      = useState(group?.strain ?? "");
+  const [description, setDescription] = useState(group?.description ?? "");
+  const [available,   setAvailable]   = useState(group?.available ?? true);
+  const [sizes, setSizes] = useState<SizeRow[]>(() => {
+    if (group) {
+      return group.variants.map(v => ({
+        id:    v.id,
+        unit:  v.unit ?? "",
+        price: v.price_per_unit?.toString() ?? "",
+      }));
     }
-    setAliasInput("");
-  }
+    return [{ unit: "", price: "" }];
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  function removeAlias(a: string) {
-    set("aliases", form.aliases.filter(x => x !== a));
+  async function handleSave() {
+    if (!name.trim())     { setErr("Product name is required."); return; }
+    const validSizes = sizes.filter(s => s.unit.trim() && s.price.trim());
+    if (!validSizes.length) { setErr("Add at least one size with a price."); return; }
+
+    setSaving(true);
+    setErr(null);
+    try {
+      if (!isNew) {
+        const keepIds   = new Set(validSizes.filter(s => s.id).map(s => s.id!));
+        const deleteIds = group!.variants.filter(v => !keepIds.has(v.id)).map(v => v.id);
+        if (deleteIds.length) {
+          await supabase.from("products").delete().in("id", deleteIds);
+        }
+        for (const s of validSizes) {
+          const payload = {
+            name: name.trim(),
+            farm: farm || null,
+            type: type.trim() || null,
+            strain: strain.trim() || null,
+            description: description.trim() || null,
+            available,
+            unit: s.unit.trim(),
+            price_per_unit: parseFloat(s.price),
+          };
+          if (s.id) {
+            await supabase.from("products").update(payload).eq("id", s.id);
+          } else {
+            await supabase.from("products").insert({ ...payload, id: crypto.randomUUID(), org_id: orgId });
+          }
+        }
+      } else {
+        const rows = validSizes.map(s => ({
+          id:   crypto.randomUUID(),
+          org_id: orgId,
+          name: name.trim(),
+          farm: farm || null,
+          type: type.trim() || null,
+          strain: strain.trim() || null,
+          description: description.trim() || null,
+          available,
+          unit: s.unit.trim(),
+          price_per_unit: parseFloat(s.price),
+        }));
+        const { error } = await supabase.from("products").insert(rows);
+        if (error) throw error;
+      }
+      onSaved();
+    } catch (e: any) {
+      setErr(friendlyError(e.message ?? String(e)));
+    }
+    setSaving(false);
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Brand */}
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Brand *</label>
-          <select value={form.brand_id} onChange={e => set("brand_id", e.target.value)} className={inputCls()}>
-            <option value="">— select brand —</option>
-            {ownBrands.map(b => <option key={b.id} value={b.id}>{b.brand_name}</option>)}
-          </select>
-        </div>
-        {/* Product name */}
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Product Name *</label>
-          <input value={form.product_name} onChange={e => set("product_name", e.target.value)} placeholder="e.g. Blue Dream 3.5g" className={inputCls()} />
-        </div>
-        {/* Category */}
-        <div className="space-y-1 relative">
-          <label className="text-xs font-medium text-muted-foreground">Category</label>
-          <div className="relative">
-            <input
-              value={form.category}
-              onChange={e => { set("category", e.target.value); setCatOpen(true); }}
-              onFocus={() => setCatOpen(true)}
-              onBlur={() => setTimeout(() => setCatOpen(false), 150)}
-              placeholder="Flower, Vape…"
-              className={inputCls("pr-8")}
-            />
-            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0, y: 16 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.95, opacity: 0, y: 8 }}
+        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        className="w-full max-w-lg rounded-xl border border-border bg-card overflow-hidden shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-md flex items-center justify-center"
+                 style={{ background: "hsl(168 100% 42% / 0.12)" }}>
+              <Package className="w-4 h-4 text-primary" />
+            </div>
+            <h2 className="text-[15px] font-semibold text-foreground">
+              {isNew ? "Add Product" : "Edit Product"}
+            </h2>
           </div>
-          {catOpen && (
-            <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-card shadow-lg overflow-hidden">
-              {CATEGORY_SUGGESTIONS.filter(c => c.toLowerCase().includes(form.category.toLowerCase())).map(c => (
-                <button key={c} onMouseDown={() => { set("category", c); setCatOpen(false); }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors">
-                  {c}
-                </button>
-              ))}
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+          {err && (
+            <div className="rounded-md p-3 text-[11px] text-destructive bg-destructive/10 border border-destructive/20">
+              {err}
             </div>
           )}
-        </div>
-        {/* Weight */}
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Weight</label>
-          <input value={form.weight} onChange={e => set("weight", e.target.value)} placeholder="e.g. 3.5g" className={inputCls()} />
-        </div>
-        {/* Price */}
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Unit Price ($)</label>
-          <input type="number" step="0.01" min="0" value={form.unit_price} onChange={e => set("unit_price", e.target.value)} placeholder="8.00" className={inputCls()} />
-        </div>
-        {/* THC */}
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">THC Range</label>
-          <input value={form.thc_range} onChange={e => set("thc_range", e.target.value)} placeholder="e.g. 20-25%" className={inputCls()} />
-        </div>
-      </div>
 
-      {/* Description */}
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">Description</label>
-        <textarea value={form.description} onChange={e => set("description", e.target.value)} rows={2} placeholder="Optional…" className={inputCls("resize-none")} />
-      </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Product Name *</label>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g. Living Soil Indoor Flower (Black Label)"
+              className="w-full h-10 text-sm bg-secondary border border-border rounded-md px-3"
+            />
+          </div>
 
-      {/* Aliases */}
-      <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">Aliases (alt names for matching)</label>
-        <div className="flex gap-2">
-          <input
-            value={aliasInput}
-            onChange={e => setAliasInput(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addAlias(); } }}
-            placeholder="Type alias, press Enter…"
-            className={inputCls("flex-1")}
-          />
-          <button onClick={addAlias} className={secondaryBtn()}>Add</button>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Farm</label>
+              <select
+                value={farm}
+                onChange={e => setFarm(e.target.value)}
+                className="w-full h-10 text-sm rounded-md bg-secondary border border-border text-foreground px-3"
+              >
+                {FARMS.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Type</label>
+              <select
+                value={type}
+                onChange={e => setType(e.target.value)}
+                className="w-full h-10 text-sm rounded-md bg-secondary border border-border text-foreground px-3 capitalize"
+              >
+                <option value="">Select type</option>
+                {PRODUCT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border p-3 bg-background/30">
+            <SizeEditor sizes={sizes} onChange={setSizes} />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Strains</label>
+            <input
+              value={strain}
+              onChange={e => setStrain(e.target.value)}
+              placeholder="e.g. Cap Junky; Blue Runtz; Gary Payton"
+              className="w-full h-10 text-sm bg-secondary border border-border rounded-md px-3"
+            />
+            <p className="text-[9px] text-muted-foreground">Separate with semicolons</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Description</label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              rows={2}
+              placeholder="Product description…"
+              className="w-full text-sm bg-secondary border border-border rounded-md px-3 py-2 resize-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-between py-1">
+            <div>
+              <p className="text-sm font-medium text-foreground">Available</p>
+              <p className="text-[11px] text-muted-foreground">Show as in-stock</p>
+            </div>
+            <button
+              onClick={() => setAvailable(!available)}
+              className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+              style={{ background: available ? "hsl(168 100% 42% / 0.85)" : "hsl(var(--border))" }}
+            >
+              <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                    style={{ transform: available ? "translateX(22px)" : "translateX(2px)" }} />
+            </button>
+          </div>
         </div>
-        {form.aliases.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {form.aliases.map(a => (
-              <span key={a} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs">
-                <Tag className="w-3 h-3" />
-                {a}
-                <button onClick={() => removeAlias(a)} className="hover:text-red-400 transition-colors"><X className="w-3 h-3" /></button>
-              </span>
+
+        {/* Footer */}
+        <div className="flex gap-2 px-5 py-4 border-t border-border">
+          <button
+            onClick={onClose}
+            className="flex-1 h-9 text-sm font-medium border border-border rounded-md hover:bg-secondary/50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 h-9 text-sm font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+          >
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            {isNew ? "Add Product" : "Save Changes"}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ─── Main Page ───────────────────────────────────────────────────────────────
+
+export function MyProducts() {
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [products, setProducts] = useState<DbProduct[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [err,      setErr]      = useState<string | null>(null);
+
+  const [search,     setSearch]     = useState("");
+  const [farmFilter, setFarmFilter] = useState("all");
+  const [expanded,   setExpanded]   = useState<Set<string>>(new Set());
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>({ key: "name", dir: "asc" });
+
+  const [editGroup,   setEditGroup]   = useState<ProductGroup | null | undefined>(undefined);
+  const [deleteGroup, setDeleteGroup] = useState<ProductGroup | null>(null);
+  const [deleting,    setDeleting]    = useState(false);
+  const showModal = editGroup !== undefined;
+
+  // Resolve user's active org once, then load all products for it
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
+      const { data: mem } = await supabase
+        .from("org_members")
+        .select("org_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      if (mem?.org_id) setOrgId(mem.org_id);
+      else setLoading(false);
+    })();
+  }, []);
+
+  function load() {
+    if (!orgId) return;
+    setLoading(true);
+    supabase.from("products").select("*").eq("org_id", orgId).order("name")
+      .then(({ data, error }) => {
+        if (error) { setErr(friendlyError(error.message)); setLoading(false); return; }
+        setProducts((data ?? []) as DbProduct[]);
+        setLoading(false);
+      });
+  }
+  useEffect(() => { if (orgId) load(); /* eslint-disable-next-line */ }, [orgId]);
+
+  const allGroups = useMemo(() => groupProducts(products), [products]);
+  const farms     = useMemo(() => Array.from(new Set(products.map(productFarm))).sort(), [products]);
+
+  const filteredGroups = useMemo(() => {
+    return allGroups.filter(g => {
+      if (farmFilter !== "all" && g.farm !== farmFilter) return false;
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return (
+        g.name.toLowerCase().includes(q) ||
+        g.farm.toLowerCase().includes(q) ||
+        (g.strain ?? "").toLowerCase().includes(q) ||
+        (g.type   ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [allGroups, farmFilter, search]);
+
+  const sortedGroups = useMemo(() => {
+    if (!sort) return filteredGroups;
+    const arr = [...filteredGroups];
+    arr.sort((a, b) => {
+      const av: string | number | null =
+        sort.key === "minPrice" ? a.minPrice
+        : sort.key === "name"   ? a.name
+        : sort.key === "farm"   ? a.farm
+        : a.type;
+      const bv: string | number | null =
+        sort.key === "minPrice" ? b.minPrice
+        : sort.key === "name"   ? b.name
+        : sort.key === "farm"   ? b.farm
+        : b.type;
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp = typeof av === "number" && typeof bv === "number"
+        ? av - bv
+        : String(av).localeCompare(String(bv));
+      return sort.dir === "asc" ? cmp : -cmp;
+    });
+    return arr;
+  }, [filteredGroups, sort]);
+
+  const byFarm = useMemo(() => {
+    const acc: Record<string, ProductGroup[]> = {};
+    for (const g of sortedGroups) (acc[g.farm] ??= []).push(g);
+    return acc;
+  }, [sortedGroups]);
+
+  function toggleSort(k: SortKey) {
+    setSort(prev => {
+      if (prev?.key !== k) return { key: k, dir: "asc" };
+      if (prev.dir === "asc") return { key: k, dir: "desc" };
+      return null;
+    });
+  }
+
+  function toggleExpand(key: string) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  async function toggleAvailable(g: ProductGroup) {
+    const next = !g.available;
+    const ids = g.variants.map(v => v.id);
+    setProducts(prev => prev.map(p => ids.includes(p.id) ? { ...p, available: next } : p));
+    await supabase.from("products").update({ available: next }).in("id", ids);
+  }
+
+  async function confirmDelete() {
+    if (!deleteGroup) return;
+    setDeleting(true);
+    const ids = deleteGroup.variants.map(v => v.id);
+    await supabase.from("products").delete().in("id", ids);
+    setDeleting(false);
+    setDeleteGroup(null);
+    setProducts(prev => prev.filter(p => !ids.includes(p.id)));
+  }
+
+  const uniqueProducts = allGroups.length;
+  const totalVariants  = products.length;
+  const availableCount = allGroups.filter(g => g.available).length;
+
+  return (
+    <>
+      <div className="p-4 md:p-8 max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight leading-none">Product Catalog</h1>
+            <div className="h-px mt-2" style={{ background: "linear-gradient(to right, hsl(168 100% 42% / 0.5), transparent)" }} />
+          </div>
+          <button
+            onClick={() => setEditGroup(null)}
+            disabled={!orgId}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add Product
+          </button>
+        </div>
+
+        {/* Stats */}
+        {!loading && products.length > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+            {[
+              { label: "Products",      value: uniqueProducts, color: "hsl(168 100% 42%)" },
+              { label: "Size Variants", value: totalVariants,  color: "hsl(217 91% 60%)" },
+              { label: "Available",     value: availableCount, color: "#10B981" },
+              { label: "Farms",         value: farms.length,   color: "#A78BFA" },
+            ].map((s, i) => (
+              <motion.div
+                key={s.label}
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className="rounded-xl border border-border bg-card px-4 py-3"
+              >
+                <p className="text-[9px] uppercase tracking-wider text-muted-foreground">{s.label}</p>
+                <p className="text-xl font-bold tabular-nums mt-0.5" style={{ color: s.color }}>{s.value}</p>
+              </motion.div>
             ))}
           </div>
         )}
-      </div>
 
-      {/* Active toggle + actions */}
-      <div className="flex items-center justify-between pt-2 border-t border-border">
-        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <input type="checkbox" checked={form.active} onChange={e => set("active", e.target.checked)} className="accent-primary w-4 h-4" />
-          <span className="text-foreground">Active</span>
-        </label>
-        <div className="flex gap-2">
-          <button onClick={onCancel} className={secondaryBtn()}>Cancel</button>
-          <button
-            onClick={() => onSave(form)}
-            disabled={saving || !form.product_name.trim()}
-            className={primaryBtn("disabled:opacity-50 flex items-center gap-1.5")}
-          >
-            {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-            Save Product
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── CSV Import Modal ──────────────────────────────────────────────────────────
-
-interface CsvRow {
-  brand: string;
-  product_name: string;
-  category: string;
-  weight: string;
-  price: string;
-  thc_range: string;
-}
-
-interface ImportSummary { imported: number; skipped: number; brandsCreated: number; }
-
-interface CsvImportProps {
-  orgId: string;
-  brands: UserBrand[];
-  onClose: () => void;
-  onDone: () => void;
-}
-
-function parseCsvLine(line: string): string[] {
-  // Handles quoted fields with commas inside
-  const cols: string[] = [];
-  let cur = "";
-  let inQuote = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') { inQuote = !inQuote; continue; }
-    if (ch === "," && !inQuote) { cols.push(cur.trim()); cur = ""; continue; }
-    cur += ch;
-  }
-  cols.push(cur.trim());
-  return cols;
-}
-
-function parsePasteLine(line: string): CsvRow | null {
-  // Format: Brand - Product Name - Category - Weight - Price - THC
-  const parts = line.split(/\s*-\s*/);
-  if (parts.length < 2) return null;
-  return {
-    brand:        parts[0]?.trim() ?? "",
-    product_name: parts[1]?.trim() ?? "",
-    category:     parts[2]?.trim() ?? "",
-    weight:       parts[3]?.trim() ?? "",
-    price:        parts[4]?.trim() ?? "",
-    thc_range:    parts[5]?.trim() ?? "",
-  };
-}
-
-function CsvImport({ orgId, brands, onClose, onDone }: CsvImportProps) {
-  const [mode, setMode]         = useState<"upload" | "paste">("upload");
-  const [pasteText, setPasteText] = useState("");
-  const [rows, setRows]         = useState<CsvRow[]>([]);
-  const [preview, setPreview]   = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [summary, setSummary]   = useState<ImportSummary | null>(null);
-  const [error, setError]       = useState<string | null>(null);
-
-  function parseCsvText(text: string) {
-    const lines = text.trim().split(/\r?\n/);
-    if (lines.length < 2) { setError("CSV must have a header row and at least one data row."); return; }
-    const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/[\s-]+/g, "_"));
-    const idx = (col: string) => headers.indexOf(col);
-    if (idx("brand") === -1 || idx("product_name") === -1) {
-      setError("CSV must have at least 'brand' and 'product_name' columns.");
-      return;
-    }
-    const parsed: CsvRow[] = lines.slice(1).filter(l => l.trim()).map(line => {
-      const cols = parseCsvLine(line);
-      return {
-        brand:        cols[idx("brand")]        ?? "",
-        product_name: cols[idx("product_name")] ?? "",
-        category:     idx("category")  >= 0 ? cols[idx("category")]  ?? "" : "",
-        weight:       idx("weight")    >= 0 ? cols[idx("weight")]    ?? "" : "",
-        price:        idx("price")     >= 0 ? cols[idx("price")]     ?? "" : "",
-        thc_range:    idx("thc_range") >= 0 || idx("thc") >= 0
-          ? cols[idx("thc_range") >= 0 ? idx("thc_range") : idx("thc")] ?? ""
-          : "",
-      };
-    }).filter(r => r.brand && r.product_name);
-    setRows(parsed);
-    setPreview(true);
-    setError(null);
-  }
-
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => parseCsvText(ev.target?.result as string);
-    reader.readAsText(file);
-  }
-
-  function handlePasteParse() {
-    const lines = pasteText.trim().split(/\r?\n/).filter(l => l.trim());
-    if (!lines.length) { setError("Paste at least one product line."); return; }
-    const parsed = lines.map(parsePasteLine).filter(Boolean) as CsvRow[];
-    if (!parsed.length) { setError("Could not parse any lines. Format: Brand - Product Name - Category - Weight - Price"); return; }
-    setRows(parsed);
-    setPreview(true);
-    setError(null);
-  }
-
-  async function doImport() {
-    setImporting(true);
-    let imported = 0;
-    let skipped = 0;
-    let brandsCreated = 0;
-
-    // Load existing products once for duplicate checking
-    const { data: existingProducts } = await supabase
-      .from("user_products")
-      .select("product_name, brand_id")
-      .eq("org_id", orgId);
-    const existingSet = new Set(
-      (existingProducts ?? []).map((p: any) => `${p.brand_id}|${p.product_name.toLowerCase()}`)
-    );
-
-    // Brand cache: existing brands map + newly created
-    const brandCache: Record<string, string> = {};
-    for (const b of brands) brandCache[b.brand_name.toLowerCase()] = b.id;
-
-    try {
-      for (const row of rows) {
-        if (!row.brand || !row.product_name) { skipped++; continue; }
-        const brandKey = row.brand.toLowerCase();
-
-        // Find or create brand
-        let brandId = brandCache[brandKey] ?? null;
-        if (!brandId) {
-          const { data: nb } = await supabase.from("user_brands")
-            .insert({ org_id: orgId, brand_name: row.brand, is_own_brand: true })
-            .select("id").single();
-          brandId = nb?.id ?? null;
-          if (brandId) { brandCache[brandKey] = brandId; brandsCreated++; }
-        }
-
-        // Skip duplicates
-        const dupKey = `${brandId}|${row.product_name.toLowerCase()}`;
-        if (existingSet.has(dupKey)) { skipped++; continue; }
-
-        await supabase.from("user_products").insert({
-          org_id: orgId,
-          brand_id: brandId,
-          product_name: row.product_name,
-          category: row.category || null,
-          weight: row.weight || null,
-          unit_price: row.price ? parseFloat(row.price) : null,
-          thc_range: row.thc_range || null,
-          active: true,
-        });
-        existingSet.add(dupKey);
-        imported++;
-      }
-      setSummary({ imported, skipped, brandsCreated });
-    } catch (err: any) {
-      setError(err.message ?? "Import failed.");
-    } finally {
-      setImporting(false);
-    }
-  }
-
-  // ── Render ─────────────────────────────────────────────────────────────────
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl rounded-xl border border-border bg-card shadow-xl space-y-4 p-6 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-foreground">Bulk Import Products</h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-accent transition-colors"><X className="w-4 h-4" /></button>
-        </div>
-
-        {/* Summary screen */}
-        {summary ? (
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-lg border border-border bg-card p-4 text-center">
-                <p className="text-2xl font-bold text-primary">{summary.imported}</p>
-                <p className="text-xs text-muted-foreground mt-1">Products imported</p>
-              </div>
-              <div className="rounded-lg border border-border bg-card p-4 text-center">
-                <p className="text-2xl font-bold text-amber-500">{summary.skipped}</p>
-                <p className="text-xs text-muted-foreground mt-1">Skipped (duplicates)</p>
-              </div>
-              <div className="rounded-lg border border-border bg-card p-4 text-center">
-                <p className="text-2xl font-bold text-blue-500">{summary.brandsCreated}</p>
-                <p className="text-xs text-muted-foreground mt-1">New brands created</p>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-border">
-              <button onClick={onDone} className={primaryBtn()}>Done</button>
-            </div>
-          </div>
-        ) : !preview ? (
-          // ── Input screen ────────────────────────────────────────────────────
-          <div className="space-y-4">
-            {/* Mode toggle */}
-            <div className="flex gap-1 p-1 bg-secondary rounded-lg w-fit">
-              {(["upload", "paste"] as const).map(m => (
-                <button
-                  key={m}
-                  onClick={() => { setMode(m); setError(null); }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${mode === m ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  {m === "upload" ? "Upload CSV" : "Paste Text"}
-                </button>
-              ))}
-            </div>
-
-            {mode === "upload" ? (
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground">
-                  Columns: <code className="bg-muted px-1 py-0.5 rounded">brand, product_name, category, weight, price, thc_range</code>
-                  {" "}— only brand + product_name required
-                </p>
-                <label className="flex flex-col items-center gap-2 p-8 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 transition-colors">
-                  <Upload className="w-7 h-7 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground font-medium">Click to upload .csv file</span>
-                  <span className="text-xs text-muted-foreground">or drag and drop</span>
-                  <input type="file" accept=".csv" className="hidden" onChange={handleFile} />
-                </label>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-xs text-muted-foreground">
-                  One product per line: <code className="bg-muted px-1 py-0.5 rounded">Brand - Product Name - Category - Weight - Price - THC%</code>
-                </p>
-                <textarea
-                  value={pasteText}
-                  onChange={e => { setPasteText(e.target.value); setError(null); }}
-                  placeholder={"Wyld Gummies - Strawberry 10mg - Edibles - 10pc - 12.00 - 0%\nCresco - LLR Sativa - Concentrate - 1g - 45.00 - 85%"}
-                  rows={8}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-xs font-mono text-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                <button onClick={handlePasteParse} className={primaryBtn()}>Parse Products</button>
-              </div>
-            )}
-            {error && <p className="text-xs text-red-400">{error}</p>}
-          </div>
-        ) : (
-          // ── Preview screen ──────────────────────────────────────────────────
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">{rows.length} products ready to import</p>
-              <button onClick={() => { setPreview(false); setRows([]); }} className="text-xs text-muted-foreground hover:text-foreground">← Back</button>
-            </div>
-            <div className="rounded-lg border border-border overflow-auto max-h-64">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0">
-                  <tr className="bg-sidebar">
-                    <th className={thCls}>Brand</th>
-                    <th className={thCls}>Name</th>
-                    <th className={thCls}>Category</th>
-                    <th className={thCls}>Weight</th>
-                    <th className={thCls}>Price</th>
-                    <th className={thCls}>THC</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40">
-                  {rows.map((r, i) => (
-                    <tr key={i} className="hover:bg-accent/20">
-                      <td className="px-4 py-2 font-medium">{r.brand}</td>
-                      <td className="px-4 py-2">{r.product_name}</td>
-                      <td className="px-4 py-2 text-muted-foreground">{r.category || "—"}</td>
-                      <td className="px-4 py-2 text-muted-foreground">{r.weight || "—"}</td>
-                      <td className="px-4 py-2 text-muted-foreground">{r.price || "—"}</td>
-                      <td className="px-4 py-2 text-muted-foreground">{r.thc_range || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-xs text-muted-foreground">Existing products with the same brand + name will be skipped automatically.</p>
-            {error && <p className="text-xs text-red-400">{error}</p>}
-            <div className="flex justify-end gap-2 pt-2 border-t border-border">
-              <button onClick={() => { setPreview(false); setRows([]); setError(null); }} className={secondaryBtn()}>Back</button>
-              <button onClick={doImport} disabled={importing} className={primaryBtn("flex items-center gap-1.5 disabled:opacity-50")}>
-                {importing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                Import {rows.length} Products
+        {/* Search + farm filter */}
+        <div className="flex flex-wrap items-center gap-3 mb-5">
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search products, strains…"
+              className="pl-8 h-8 w-full text-xs bg-secondary border border-border rounded-md pr-8"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-3 h-3" />
               </button>
-            </div>
+            )}
           </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── TAB 2: Products ───────────────────────────────────────────────────────────
-
-function ProductsTab({ orgId }: { orgId: string }) {
-  const [products, setProducts]   = useState<UserProduct[]>([]);
-  const [brands, setBrands]       = useState<UserBrand[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [query, setQuery]         = useState("");
-  const [showForm, setShowForm]   = useState(false);
-  const [editProduct, setEditProduct] = useState<UserProduct | null>(null);
-  const [saving, setSaving]       = useState(false);
-  const [showCsv, setShowCsv]     = useState(false);
-  const [running, setRunning]     = useState(false);
-  const [runMsg, setRunMsg]       = useState<string | null>(null);
-
-  const loadBrands = useCallback(async () => {
-    const { data } = await supabase
-      .from("user_brands")
-      .select("id, brand_name, is_own_brand, created_at")
-      .eq("org_id", orgId)
-      .order("brand_name");
-    setBrands(data ?? []);
-  }, [orgId]);
-
-  const loadProducts = useCallback(async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("user_products")
-      .select("id, brand_id, product_name, category, weight, unit_price, thc_range, description, aliases, active, created_at, user_brand:brand_id(brand_name)")
-      .eq("org_id", orgId)
-      .order("product_name");
-    setProducts((data ?? []) as unknown as UserProduct[]);
-    setLoading(false);
-  }, [orgId]);
-
-  useEffect(() => {
-    loadBrands();
-    loadProducts();
-  }, [loadBrands, loadProducts]);
-
-  const ownBrands = brands.filter(b => b.is_own_brand);
-
-  const filtered = query
-    ? products.filter(p =>
-        p.product_name.toLowerCase().includes(query.toLowerCase()) ||
-        (p.user_brand?.brand_name ?? "").toLowerCase().includes(query.toLowerCase()) ||
-        (p.category ?? "").toLowerCase().includes(query.toLowerCase())
-      )
-    : products;
-
-  function formDataFromProduct(p: UserProduct): ProductFormData {
-    return {
-      brand_id: p.brand_id ?? "",
-      product_name: p.product_name,
-      category: p.category ?? "",
-      weight: p.weight ?? "",
-      unit_price: p.unit_price != null ? String(p.unit_price) : "",
-      thc_range: p.thc_range ?? "",
-      description: p.description ?? "",
-      aliases: p.aliases ?? [],
-      active: p.active,
-    };
-  }
-
-  async function saveProduct(data: ProductFormData) {
-    if (!data.product_name.trim()) return;
-    setSaving(true);
-    const payload = {
-      org_id: orgId,
-      brand_id: data.brand_id || null,
-      product_name: data.product_name.trim(),
-      category: data.category || null,
-      weight: data.weight || null,
-      unit_price: data.unit_price ? parseFloat(data.unit_price) : null,
-      thc_range: data.thc_range || null,
-      description: data.description || null,
-      aliases: data.aliases.length > 0 ? data.aliases : null,
-      active: data.active,
-    };
-    if (editProduct) {
-      await supabase.from("user_products").update(payload).eq("id", editProduct.id);
-    } else {
-      await supabase.from("user_products").insert(payload);
-    }
-    setSaving(false);
-    setShowForm(false);
-    setEditProduct(null);
-    await loadProducts();
-  }
-
-  async function deleteProduct(id: string) {
-    if (!confirm("Delete this product?")) return;
-    await supabase.from("user_products").delete().eq("id", id);
-    await loadProducts();
-  }
-
-  async function runMatcher() {
-    setRunning(true);
-    setRunMsg(null);
-    try {
-      const result = await callEdgeFunction("match-products", { org_id: orgId });
-      setRunMsg(`Matcher complete. ${(result as any)?.matched ?? ""}`);
-    } catch (err: any) {
-      setRunMsg(`Error: ${err.message}`);
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  const isFormOpen = showForm || editProduct !== null;
-
-  return (
-    <div className="space-y-4">
-      {/* Header actions */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search products…"
-            className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+          <div className="flex flex-wrap gap-1.5">
+            {["all", ...farms].map(f => (
+              <button
+                key={f}
+                onClick={() => setFarmFilter(f)}
+                className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border"
+                style={farmFilter === f
+                  ? { background: "hsl(168 100% 42% / 0.15)", color: "hsl(168 100% 42%)", borderColor: "hsl(168 100% 42% / 0.4)" }
+                  : { background: "transparent", color: "hsl(var(--muted-foreground))", borderColor: "hsl(var(--border))" }
+                }
+              >
+                {f === "all" ? "All Farms" : f}
+              </button>
+            ))}
+          </div>
         </div>
-        <button onClick={() => setShowCsv(true)} className={secondaryBtn("flex items-center gap-1.5")}>
-          <Upload className="w-3.5 h-3.5" />
-          Import CSV
-        </button>
-        <button
-          onClick={runMatcher}
-          disabled={running}
-          className={secondaryBtn("flex items-center gap-1.5 disabled:opacity-50")}
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${running ? "animate-spin" : ""}`} />
-          Run Matcher
-        </button>
-        <button
-          onClick={() => { setEditProduct(null); setShowForm(!showForm); }}
-          className={primaryBtn("flex items-center gap-1.5")}
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add Product
-        </button>
-      </div>
 
-      {runMsg && (
-        <p className={`text-xs px-3 py-2 rounded-lg ${runMsg.startsWith("Error") ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"}`}>
-          {runMsg}
-        </p>
-      )}
+        {/* Sort bar */}
+        {!loading && filteredGroups.length > 0 && (
+          <div className="flex items-center gap-4 mb-4 px-1">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Sort by</span>
+            <div className="flex items-center gap-4">
+              <SortableHeader label="Name"  sortKey="name"     sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Farm"  sortKey="farm"     sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Type"  sortKey="type"     sort={sort} onSort={toggleSort} />
+              <SortableHeader label="Price" sortKey="minPrice" sort={sort} onSort={toggleSort} />
+            </div>
+          </div>
+        )}
 
-      {/* Add/Edit form */}
-      {isFormOpen && (
-        <ProductForm
-          ownBrands={ownBrands}
-          initial={editProduct ? formDataFromProduct(editProduct) : undefined}
-          onSave={saveProduct}
-          onCancel={() => { setShowForm(false); setEditProduct(null); }}
-          saving={saving}
-        />
-      )}
-
-      {/* Products table */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        {/* Content */}
         {loading ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">Loading…</div>
+          <div className="flex items-center justify-center py-24">
+            <Loader2 className="w-7 h-7 text-primary animate-spin" />
+          </div>
+        ) : err ? (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-6 text-center">
+            <AlertCircle className="w-8 h-8 text-destructive mx-auto mb-2" />
+            <p className="text-sm font-medium text-foreground mb-1">Could not load products</p>
+            <p className="text-xs text-muted-foreground">{err}</p>
+          </div>
+        ) : products.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card p-16 text-center">
+            <Package className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-[15px] font-semibold text-foreground mb-1">No products yet</p>
+            <p className="text-sm text-muted-foreground mb-4">Add your first product to get started.</p>
+            <button
+              onClick={() => setEditGroup(null)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Product
+            </button>
+          </div>
+        ) : Object.keys(byFarm).length === 0 ? (
+          <div className="p-10 text-center text-sm text-muted-foreground">No products match your search.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-sidebar" style={{ borderBottom: "1px solid var(--glass-border)" }}>
-                  <th className={thCls}>Brand</th>
-                  <th className={thCls}>Product Name</th>
-                  <th className={thCls}>Category</th>
-                  <th className={thCls}>Weight</th>
-                  <th className={thCls}>Price</th>
-                  <th className={thCls}>THC</th>
-                  <th className={thCls}>Active</th>
-                  <th className={thCls}>Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/40">
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                      {products.length === 0 ? "No products yet. Add one above." : "No products match your search."}
-                    </td>
-                  </tr>
-                ) : filtered.map(p => (
-                  <tr
-                    key={p.id}
-                    className="hover:bg-accent/20 transition-colors cursor-pointer"
-                    onClick={() => { setShowForm(false); setEditProduct(p); }}
+          <div className="space-y-6">
+            {Object.entries(byFarm).map(([farm, farmGroups], fi) => {
+              const fc = farmColor(farm);
+              return (
+                <motion.div
+                  key={farm}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: fi * 0.08 }}
+                  className="rounded-xl border border-border bg-card overflow-hidden"
+                >
+                  {/* Farm header */}
+                  <div
+                    className="px-5 py-3 flex items-center justify-between border-b border-border"
+                    style={{ background: fc.bg }}
                   >
-                    <td className="px-4 py-2 text-muted-foreground text-xs">{p.user_brand?.brand_name ?? "—"}</td>
-                    <td className="px-4 py-2 font-medium text-foreground">{p.product_name}</td>
-                    <td className="px-4 py-2 text-xs text-muted-foreground">{p.category ?? "—"}</td>
-                    <td className="px-4 py-2 text-xs text-muted-foreground font-mono-data">{p.weight ?? "—"}</td>
-                    <td className="px-4 py-2 text-xs text-muted-foreground font-mono-data">
-                      {p.unit_price != null ? `$${p.unit_price.toFixed(2)}` : "—"}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-muted-foreground">{p.thc_range ?? "—"}</td>
-                    <td className="px-4 py-2">
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${p.active ? "bg-emerald-500/15 text-emerald-400" : "bg-muted text-muted-foreground"}`}>
-                        {p.active ? "Yes" : "No"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => { setShowForm(false); setEditProduct(p); }}
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                          title="Edit"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => deleteProduct(p.id)}
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full" style={{ background: fc.text }} />
+                      <h2 className="text-[14px] font-bold" style={{ color: fc.text }}>{farm}</h2>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      {farmGroups.length} product{farmGroups.length !== 1 ? "s" : ""} ·{" "}
+                      {farmGroups.reduce((s, g) => s + g.variants.length, 0)} variants
+                    </span>
+                  </div>
+
+                  {/* Product rows */}
+                  <div>
+                    {farmGroups.map((g) => {
+                      const key = g.name + g.farm;
+                      const isOpen = expanded.has(key);
+                      return (
+                        <div key={key}>
+                          <div
+                            className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-secondary/30 transition-colors group border-b border-border/40 last:border-b-0"
+                            onClick={() => toggleExpand(key)}
+                          >
+                            <motion.div animate={{ rotate: isOpen ? 90 : 0 }} transition={{ duration: 0.15 }}>
+                              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                            </motion.div>
+
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[13px] font-semibold text-foreground truncate">{g.name}</p>
+                              {g.description && (
+                                <p className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-md">
+                                  {g.description}
+                                </p>
+                              )}
+                            </div>
+
+                            {g.type && (
+                              <span
+                                className="text-[10px] font-medium px-2 py-0.5 rounded-md capitalize shrink-0 border border-border bg-secondary/40 text-muted-foreground"
+                              >
+                                {g.type.replace("_", "-")}
+                              </span>
+                            )}
+
+                            <span className="text-[13px] font-bold text-foreground tabular-nums shrink-0 w-36 text-right">
+                              {priceRange(g)}
+                            </span>
+
+                            <span className="text-[10px] text-muted-foreground shrink-0 w-20 text-center">
+                              {g.variants.length} size{g.variants.length !== 1 ? "s" : ""}
+                            </span>
+
+                            <button
+                              onClick={e => { e.stopPropagation(); toggleAvailable(g); }}
+                              className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0"
+                              style={{ background: g.available ? "hsl(168 100% 42% / 0.8)" : "hsl(var(--border))" }}
+                            >
+                              <span
+                                className="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+                                style={{ transform: g.available ? "translateX(18px)" : "translateX(2px)" }}
+                              />
+                            </button>
+
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                              <button
+                                onClick={e => { e.stopPropagation(); setEditGroup(g); }}
+                                className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={e => { e.stopPropagation(); setDeleteGroup(g); }}
+                                className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Expanded: strains + size table */}
+                          <AnimatePresence>
+                            {isOpen && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: "auto", opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                                className="overflow-hidden"
+                              >
+                                <div className="px-5 pb-3 pt-1 ml-8">
+                                  {g.strain && (
+                                    <div className="mb-3 flex flex-wrap gap-1">
+                                      {g.strain.split(/[;,]/).map(s => s.trim()).filter(Boolean).slice(0, 12).map(s => (
+                                        <span
+                                          key={s}
+                                          className="text-[9px] font-medium px-1.5 py-0.5 rounded-md border border-border bg-secondary/40 text-muted-foreground"
+                                        >
+                                          {s}
+                                        </span>
+                                      ))}
+                                      {g.strain.split(/[;,]/).filter(s => s.trim()).length > 12 && (
+                                        <span className="text-[9px] text-muted-foreground">
+                                          +{g.strain.split(/[;,]/).filter(s => s.trim()).length - 12} more
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  <div className="rounded-lg border border-border overflow-hidden">
+                                    <table className="w-full">
+                                      <thead>
+                                        <tr className="bg-secondary/30">
+                                          <th className="text-left  text-[9px] font-medium text-muted-foreground uppercase tracking-wider px-3 py-2">Size</th>
+                                          <th className="text-right text-[9px] font-medium text-muted-foreground uppercase tracking-wider px-3 py-2">Price</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {g.variants.map(v => (
+                                          <tr key={v.id} className="border-t border-border/40 hover:bg-secondary/20">
+                                            <td className="px-3 py-2 text-[12px] text-foreground">{v.unit ?? "—"}</td>
+                                            <td className="px-3 py-2 text-[12px] font-semibold text-foreground tabular-nums text-right">
+                                              {v.price_per_unit != null ? `$${Number(v.price_per_unit).toFixed(2)}` : "—"}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {showCsv && (
-        <CsvImport
-          orgId={orgId}
-          brands={brands}
-          onClose={() => setShowCsv(false)}
-          onDone={async () => {
-            setShowCsv(false);
-            await loadBrands();
-            await loadProducts();
-          }}
-        />
-      )}
-    </div>
-  );
-}
+      {/* Modal */}
+      <AnimatePresence>
+        {showModal && orgId && (
+          <ProductModal
+            group={editGroup ?? null}
+            orgId={orgId}
+            onClose={() => setEditGroup(undefined)}
+            onSaved={() => { setEditGroup(undefined); load(); }}
+          />
+        )}
+      </AnimatePresence>
 
-// ── TAB 3: Match Review ───────────────────────────────────────────────────────
-
-function MatchReviewTab({ orgId, onCountChange }: { orgId: string; onCountChange: (n: number) => void }) {
-  const [matches, setMatches] = useState<ProductMatch[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("product_matches")
-      .select(`
-        id, confidence, match_method, verified,
-        user_product:user_product_id(product_name, user_brand:brand_id(brand_name)),
-        menu_item:menu_item_id(raw_name, raw_brand),
-        intel_store:intel_store_id(name, city)
-      `)
-      .eq("verified", false)
-      .gte("confidence", 0.6)
-      .order("confidence", { ascending: false })
-      .limit(100);
-    const list = (data ?? []) as unknown as ProductMatch[];
-    setMatches(list);
-    onCountChange(list.length);
-    setLoading(false);
-  }, [orgId, onCountChange]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function confirm(id: string) {
-    await supabase.from("product_matches").update({ verified: true }).eq("id", id);
-    await load();
-  }
-
-  async function reject(id: string) {
-    await supabase.from("product_matches").delete().eq("id", id);
-    await load();
-  }
-
-  if (loading) return <div className="p-8 text-center text-sm text-muted-foreground">Loading matches…</div>;
-  if (matches.length === 0) return (
-    <div className="p-12 text-center space-y-2">
-      <Check className="w-8 h-8 text-emerald-400 mx-auto" />
-      <p className="text-sm text-muted-foreground">No pending matches to review.</p>
-    </div>
-  );
-
-  return (
-    <div className="space-y-3">
-      {matches.map(m => {
-        const pct = Math.round(m.confidence * 100);
-        const userBrandName = (m.user_product?.user_brand as any)?.brand_name ?? "";
-        return (
-          <div key={m.id} className="rounded-xl border border-border bg-card p-4 space-y-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-0.5">
-                <p className="text-sm font-medium text-foreground">
-                  <span className="text-muted-foreground text-xs">Product: </span>
-                  {userBrandName && <span className="text-muted-foreground">{userBrandName} — </span>}
-                  {m.user_product?.product_name ?? "Unknown"}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  <span className="text-xs">Matches: </span>
-                  <span className="text-foreground">{m.menu_item?.raw_name ?? "—"}</span>
-                  {m.intel_store && (
-                    <span> at <span className="text-foreground">{m.intel_store.name}{m.intel_store.city ? `, ${m.intel_store.city}` : ""}</span></span>
-                  )}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => confirm(m.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 transition-colors"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  Confirm
-                </button>
-                <button
-                  onClick={() => reject(m.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-600/20 text-red-400 border border-red-500/30 text-xs font-medium hover:bg-red-600/30 transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />
-                  Reject
-                </button>
-              </div>
-            </div>
-            {/* Confidence bar + method */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${pct >= 90 ? "bg-emerald-500" : pct >= 75 ? "bg-blue-500" : "bg-amber-500"}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-              <span className="text-xs font-mono-data text-muted-foreground w-10 text-right">{pct}%</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${METHOD_COLORS[m.match_method] ?? "bg-muted text-muted-foreground"}`}>
-                {m.match_method.replace(/_/g, " ")}
-              </span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── Main Page ─────────────────────────────────────────────────────────────────
-
-export function MyProducts() {
-  const { orgId } = useOrg();
-  const [tab, setTab]             = useState<TabId>("brands");
-  const [matchCount, setMatchCount] = useState(0);
-
-  if (!orgId) {
-    return (
-      <div className="p-6 max-w-5xl mx-auto">
-        <p className="text-sm text-muted-foreground">No organization selected.</p>
-      </div>
-    );
-  }
-
-  const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
-    { id: "brands",   label: "Brands",       icon: Tag     },
-    { id: "products", label: "Products",     icon: Package },
-    { id: "matches",  label: `Match Review${matchCount > 0 ? ` (${matchCount})` : ""}`, icon: Check },
-  ];
-
-  return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6 animate-fade-up">
-      <div>
-        <h1 className="text-foreground">My Products</h1>
-        <div className="header-underline mt-1" />
-        <p className="text-sm text-muted-foreground mt-1">Manage your brand catalog and track matches across the market</p>
-      </div>
-
-      {/* Tab bar */}
-      <div className="flex gap-0 border-b border-border overflow-x-auto">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
-              tab === id
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-            }`}
+      {/* Delete confirm */}
+      <AnimatePresence>
+        {deleteGroup && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+            onClick={() => setDeleteGroup(null)}
           >
-            <Icon className="w-3.5 h-3.5" />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab content */}
-      <div className={tab === "brands"   ? "" : "hidden"}><BrandsTab orgId={orgId} /></div>
-      <div className={tab === "products" ? "" : "hidden"}><ProductsTab orgId={orgId} /></div>
-      <div className={tab === "matches"  ? "" : "hidden"}>
-        <MatchReviewTab orgId={orgId} onCountChange={setMatchCount} />
-      </div>
-    </div>
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              className="rounded-xl border border-border bg-card p-6 max-w-sm w-full shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-4"
+                style={{ background: "hsl(329 86% 70% / 0.12)", border: "1px solid hsl(329 86% 70% / 0.25)" }}
+              >
+                <Trash2 className="w-5 h-5 text-destructive" />
+              </div>
+              <h3 className="text-[15px] font-semibold text-foreground text-center mb-1">
+                Delete "{deleteGroup.name}"
+              </h3>
+              <p className="text-sm text-muted-foreground text-center mb-5">
+                This will delete all {deleteGroup.variants.length} size variant
+                {deleteGroup.variants.length !== 1 ? "s" : ""}. This cannot be undone.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setDeleteGroup(null)}
+                  className="flex-1 h-9 text-sm font-medium border border-border rounded-md hover:bg-secondary/50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  disabled={deleting}
+                  className="flex-1 h-9 text-sm font-medium bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 disabled:opacity-50 flex items-center justify-center"
+                >
+                  {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
