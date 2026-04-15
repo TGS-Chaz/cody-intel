@@ -22,6 +22,7 @@ import {
   Code2,
   Map,
   Crown,
+  Gavel,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -43,6 +44,7 @@ const navItems = [
   { to: "/reports",   icon: BarChart2,       label: "Reports" },
   { to: "/trends",    icon: TrendingUp,      label: "Trends" },
   { to: "/briefing",  icon: Newspaper,       label: "Briefing" },
+  { to: "/industry-pulse", icon: Gavel,      label: "Industry Pulse" },
   { to: "/alerts",    icon: Bell,            label: "Alerts" },
   { to: "/widget",    icon: Globe,           label: "Widget" },
   { to: "/api-docs",  icon: Code2,           label: "API" },

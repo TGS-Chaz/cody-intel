@@ -47,7 +47,8 @@ export type FeatureKey =
   | "rest_api"
   | "store_locator_widget"
   | "six_hour_refresh"
-  | "dedicated_support";
+  | "dedicated_support"
+  | "industry_pulse";
 
 export interface PlanLimits {
   maxUsers:        number;   // -1 = unlimited
@@ -125,6 +126,7 @@ export const PLANS: Record<PlanId, PlanDef> = {
       "product_affinity", "census_demographics", "ai_purchase_orders",
       "ai_predictions", "custom_report_builder", "rest_api",
       "store_locator_widget", "six_hour_refresh", "dedicated_support",
+      "industry_pulse",
     ],
   },
 };
@@ -167,6 +169,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   store_locator_widget:   "Store locator widget",
   six_hour_refresh:       "6-hour data refresh",
   dedicated_support:      "Dedicated support",
+  industry_pulse:         "Industry Pulse (regulatory intelligence)",
 };
 
 export const TIER_ORDER: PlanId[] = ["scout", "analyst", "professional", "enterprise"];

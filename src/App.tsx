@@ -23,6 +23,7 @@ import { WeeklyBriefing } from "@/pages/WeeklyBriefing";
 import { ApiDocs } from "@/pages/ApiDocs";
 import { Territory } from "@/pages/Territory";
 import { Pricing } from "@/pages/Pricing";
+import { IndustryPulse } from "@/pages/IndustryPulse";
 
 function ProtectedRoutes() {
   const { session, loading } = useAuth();
@@ -59,6 +60,7 @@ function ProtectedRoutes() {
             <Route path="territory" element={<Territory />} />
             <Route path="pricing" element={<Pricing />} />
             <Route path="briefing" element={<WeeklyBriefing />} />
+            <Route path="industry-pulse" element={<IndustryPulse />} />
             <Route path="api-docs" element={<ApiDocs />} />
           </Route>
         </Routes>
