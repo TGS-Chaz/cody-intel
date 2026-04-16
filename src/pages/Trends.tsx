@@ -24,7 +24,13 @@ interface OwnBrand {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const BRAND_COLORS = ["#00D4AA", "#A855F7", "#F59E0B", "#3BB143", "#5C6BC0"];
+const BRAND_COLORS = [
+  "hsl(var(--chart-brand-a))",
+  "hsl(var(--chart-brand-b))",
+  "hsl(var(--chart-brand-c))",
+  "hsl(var(--chart-brand-d))",
+  "hsl(var(--chart-brand-e))",
+];
 
 const thCls =
   "text-left px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest";
@@ -165,14 +171,14 @@ function BrandRankingSection({ metrics, ownBrands }: { metrics: DailyBrandMetric
                 </td>
                 <td className="px-4 py-2.5 text-[12px] text-right tabular-nums">{row.thisWeek.toFixed(1)}</td>
                 <td className="px-4 py-2.5 text-[12px] text-right tabular-nums">{row.lastWeek.toFixed(1)}</td>
-                <td className={`px-4 py-2.5 text-[12px] text-right font-semibold tabular-nums ${row.change > 0 ? "text-emerald-500" : row.change < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                <td className={`px-4 py-2.5 text-[12px] text-right font-semibold tabular-nums ${row.change > 0 ? "text-success" : row.change < 0 ? "text-destructive" : "text-muted-foreground"}`}>
                   {row.change > 0 ? `+${row.change.toFixed(1)}` : row.change.toFixed(1)}
                 </td>
                 <td className="px-4 py-2.5 text-right">
                   {row.change > 0 ? (
-                    <TrendingUp className="w-3.5 h-3.5 text-emerald-500 inline-block" />
+                    <TrendingUp className="w-3.5 h-3.5 text-success inline-block" />
                   ) : row.change < 0 ? (
-                    <TrendingDown className="w-3.5 h-3.5 text-red-500 inline-block" />
+                    <TrendingDown className="w-3.5 h-3.5 text-destructive inline-block" />
                   ) : (
                     <span className="text-muted-foreground text-[10px]">—</span>
                   )}
@@ -271,6 +277,7 @@ function OwnBrandSection({
         <p className="text-[11px] text-muted-foreground mt-0.5">Store count over last 30 days</p>
       </div>
 
+      <div role="img" aria-label="Line chart showing own brand store count over the last 30 days">
       <ResponsiveContainer width="100%" height={220}>
         <LineChart data={chartData} margin={{ top: 4, right: 12, left: -10, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
@@ -311,6 +318,7 @@ function OwnBrandSection({
           ))}
         </LineChart>
       </ResponsiveContainer>
+      </div>
 
       <div className="mt-5 overflow-x-auto">
         <table className="w-full text-sm">
@@ -327,10 +335,10 @@ function OwnBrandSection({
               <tr key={row.brand} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                 <td className="px-4 py-2.5 text-[12px] font-medium text-foreground">{row.brand}</td>
                 <td className="px-4 py-2.5 text-[12px] text-right tabular-nums">{row.current.toFixed(1)}</td>
-                <td className={`px-4 py-2.5 text-[12px] text-right font-medium tabular-nums ${row.wowChange > 0 ? "text-emerald-500" : row.wowChange < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                <td className={`px-4 py-2.5 text-[12px] text-right font-medium tabular-nums ${row.wowChange > 0 ? "text-success" : row.wowChange < 0 ? "text-destructive" : "text-muted-foreground"}`}>
                   {row.wowChange > 0 ? `+${row.wowChange.toFixed(1)}` : row.wowChange.toFixed(1)}
                 </td>
-                <td className={`px-4 py-2.5 text-[12px] text-right font-medium tabular-nums ${row.momChange > 0 ? "text-emerald-500" : row.momChange < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                <td className={`px-4 py-2.5 text-[12px] text-right font-medium tabular-nums ${row.momChange > 0 ? "text-success" : row.momChange < 0 ? "text-destructive" : "text-muted-foreground"}`}>
                   {row.momChange > 0 ? `+${row.momChange.toFixed(1)}` : row.momChange.toFixed(1)}
                 </td>
               </tr>
@@ -401,6 +409,7 @@ function PriceTrendsSection({ metrics }: { metrics: DailyBrandMetric[] }) {
           Average price over last 30 days — top 8 categories
         </p>
       </div>
+      <div role="img" aria-label="Line chart showing average price trends by category over the last 30 days">
       <ResponsiveContainer width="100%" height={220}>
         <LineChart data={chartData} margin={{ top: 4, right: 12, left: -4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
@@ -443,6 +452,7 @@ function PriceTrendsSection({ metrics }: { metrics: DailyBrandMetric[] }) {
           ))}
         </LineChart>
       </ResponsiveContainer>
+      </div>
     </section>
   );
 }
@@ -490,10 +500,10 @@ function DistributionSection({ metrics }: { metrics: DailyBrandMetric[] }) {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Rising Stars */}
-        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4">
+        <div className="rounded-lg border border-success/20 bg-success/5 p-4">
           <div className="flex items-center gap-2 mb-3">
-            <TrendingUp className="w-4 h-4 text-emerald-500" />
-            <h3 className="text-[12px] font-semibold text-emerald-600 dark:text-emerald-400">
+            <TrendingUp className="w-4 h-4 text-success" />
+            <h3 className="text-[12px] font-semibold text-success">
               Rising Stars
             </h3>
           </div>
@@ -504,7 +514,7 @@ function DistributionSection({ metrics }: { metrics: DailyBrandMetric[] }) {
               {rising.map((item) => (
                 <li key={item.brand} className="flex items-center justify-between">
                   <span className="text-[12px] text-foreground truncate max-w-[70%]">{item.brand}</span>
-                  <span className="text-[12px] font-semibold text-emerald-500 tabular-nums">
+                  <span className="text-[12px] font-semibold text-success tabular-nums">
                     +{item.change.toFixed(1)}
                   </span>
                 </li>
@@ -514,10 +524,10 @@ function DistributionSection({ metrics }: { metrics: DailyBrandMetric[] }) {
         </div>
 
         {/* Declining */}
-        <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4">
+        <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
           <div className="flex items-center gap-2 mb-3">
-            <TrendingDown className="w-4 h-4 text-red-500" />
-            <h3 className="text-[12px] font-semibold text-red-600 dark:text-red-400">
+            <TrendingDown className="w-4 h-4 text-destructive" />
+            <h3 className="text-[12px] font-semibold text-destructive">
               Declining
             </h3>
           </div>
@@ -528,7 +538,7 @@ function DistributionSection({ metrics }: { metrics: DailyBrandMetric[] }) {
               {declining.map((item) => (
                 <li key={item.brand} className="flex items-center justify-between">
                   <span className="text-[12px] text-foreground truncate max-w-[70%]">{item.brand}</span>
-                  <span className="text-[12px] font-semibold text-red-500 tabular-nums">
+                  <span className="text-[12px] font-semibold text-destructive tabular-nums">
                     {item.change.toFixed(1)}
                   </span>
                 </li>

@@ -216,7 +216,7 @@ export function TerritoryMap() {
             <button
               onClick={finishDrawing}
               disabled={vertices.length < 3}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-success/10 text-success hover:bg-success/20 disabled:opacity-40 transition-colors"
             >
               <Check className="w-3.5 h-3.5" /> Save
             </button>
@@ -300,8 +300,8 @@ export function TerritoryMap() {
                     <Popup>
                       <div className="min-w-[150px] space-y-1 py-1">
                         <p className="font-semibold text-sm">{s.name}</p>
-                        {s.city && <p className="text-xs text-gray-500">{s.city}</p>}
-                        <p className="text-xs text-gray-400">
+                        {s.city && <p className="text-xs text-muted-foreground">{s.city}</p>}
+                        <p className="text-xs text-muted-foreground/70">
                           {s.total_products.toLocaleString()} products
                         </p>
                       </div>

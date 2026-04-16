@@ -102,14 +102,14 @@ function BriefingCard({ briefing, expanded, onToggle }: { briefing: Briefing; ex
               <StatChip
                 value={`+${topGainer.delta}`}
                 label={topGainer.brand.length > 12 ? topGainer.brand.slice(0, 12) + "…" : topGainer.brand}
-                color="text-green-500"
+                color="text-success"
               />
             )}
             {topLoser && (
               <StatChip
                 value={String(topLoser.delta)}
                 label={topLoser.brand.length > 12 ? topLoser.brand.slice(0, 12) + "…" : topLoser.brand}
-                color="text-red-400"
+                color="text-destructive"
               />
             )}
           </div>
@@ -130,14 +130,14 @@ function BriefingCard({ briefing, expanded, onToggle }: { briefing: Briefing; ex
               {stats.topGainers?.length > 0 && (
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
-                    <TrendingUp className="w-3.5 h-3.5 text-green-500" />
+                    <TrendingUp className="w-3.5 h-3.5 text-success" />
                     <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Top Gainers</span>
                   </div>
                   <div className="space-y-1">
                     {stats.topGainers.map((b) => (
                       <div key={b.brand} className="flex items-center justify-between text-xs">
                         <span className="text-foreground">{b.brand}</span>
-                        <span className="font-semibold text-green-500">+{b.delta} stores</span>
+                        <span className="font-semibold text-success">+{b.delta} stores</span>
                       </div>
                     ))}
                   </div>
@@ -146,14 +146,14 @@ function BriefingCard({ briefing, expanded, onToggle }: { briefing: Briefing; ex
               {stats.topLosers?.length > 0 && (
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
-                    <TrendingDown className="w-3.5 h-3.5 text-red-400" />
+                    <TrendingDown className="w-3.5 h-3.5 text-destructive" />
                     <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Top Losers</span>
                   </div>
                   <div className="space-y-1">
                     {stats.topLosers.map((b) => (
                       <div key={b.brand} className="flex items-center justify-between text-xs">
                         <span className="text-foreground">{b.brand}</span>
-                        <span className="font-semibold text-red-400">{b.delta} stores</span>
+                        <span className="font-semibold text-destructive">{b.delta} stores</span>
                       </div>
                     ))}
                   </div>

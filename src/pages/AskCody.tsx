@@ -15,7 +15,7 @@ const SUGGESTED = [
   {
     category: "Market Intelligence",
     icon: BarChart2,
-    color: "hsl(217 91% 60%)",
+    color: "hsl(var(--info))",
     prompts: [
       "What brands are trending statewide right now?",
       "Give me a competitive briefing for the Yakima market",
@@ -26,7 +26,7 @@ const SUGGESTED = [
   {
     category: "Distribution Gaps",
     icon: Target,
-    color: "#F59E0B",
+    color: "hsl(var(--chart-brand-c))",
     prompts: [
       "Which stores carry Phat Panda but not our brands?",
       "Where are the biggest distribution gaps for Desert Valley?",
@@ -37,7 +37,7 @@ const SUGGESTED = [
   {
     category: "Purchase Orders",
     icon: Package,
-    color: "#10B981",
+    color: "hsl(var(--success))",
     prompts: [
       "Suggest a restock order for Fire Cannabis in Yakima",
       "What should we pitch to a store in Seattle?",
@@ -48,7 +48,7 @@ const SUGGESTED = [
   {
     category: "Competitive Intel",
     icon: Zap,
-    color: "#A855F7",
+    color: "hsl(var(--chart-brand-b))",
     prompts: [
       "How is Phat Panda performing vs our brands?",
       "Which competitor dropped prices recently?",
@@ -133,7 +133,7 @@ export function AskCody() {
         <div
           className="px-6 py-4 shrink-0"
           style={{
-            background: "linear-gradient(135deg, rgba(168,85,247,0.06), transparent)",
+            background: "linear-gradient(135deg, hsl(var(--chart-brand-b) / 0.06), transparent)",
             borderBottom: "1px solid var(--glass-border-subtle)",
           }}
         >
@@ -141,8 +141,8 @@ export function AskCody() {
             <div
               className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
               style={{
-                background: "rgba(168,85,247,0.15)",
-                border: "1px solid rgba(168,85,247,0.3)",
+                background: "hsl(var(--chart-brand-b) / 0.15)",
+                border: "1px solid hsl(var(--chart-brand-b) / 0.3)",
               }}
             >
               <img
@@ -176,8 +176,8 @@ export function AskCody() {
                   <div
                     className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center mr-2.5 mt-0.5"
                     style={{
-                      background: "rgba(168,85,247,0.15)",
-                      border: "1px solid rgba(168,85,247,0.25)",
+                      background: "hsl(var(--chart-brand-b) / 0.15)",
+                      border: "1px solid hsl(var(--chart-brand-b) / 0.25)",
                     }}
                   >
                     <img
@@ -218,8 +218,8 @@ export function AskCody() {
                 <div
                   className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center mr-2.5 mt-0.5"
                   style={{
-                    background: "rgba(168,85,247,0.15)",
-                    border: "1px solid rgba(168,85,247,0.25)",
+                    background: "hsl(var(--chart-brand-b) / 0.15)",
+                    border: "1px solid hsl(var(--chart-brand-b) / 0.25)",
                   }}
                 >
                   <img
@@ -241,7 +241,7 @@ export function AskCody() {
                       <motion.div
                         key={i}
                         className="w-1.5 h-1.5 rounded-full"
-                        style={{ background: "#A855F7" }}
+                        style={{ background: "hsl(var(--chart-brand-b))" }}
                         animate={{ y: [0, -4, 0] }}
                         transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
                       />
@@ -304,7 +304,7 @@ export function AskCody() {
               onClick={() => handleSend()}
               disabled={!input.trim() || thinking}
               className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all disabled:opacity-30"
-              style={{ background: "#A855F7" }}
+              style={{ background: "hsl(var(--chart-brand-b))" }}
             >
               {thinking ? (
                 <Loader2 className="w-4 h-4 text-white animate-spin" />
@@ -322,7 +322,7 @@ export function AskCody() {
         style={{ borderLeft: "1px solid var(--glass-border-subtle)" }}
       >
         <div className="flex items-center gap-2 pt-1">
-          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+          <Sparkles className="w-3.5 h-3.5 text-chart-brand-b" />
           <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
             Suggested Questions
           </p>

@@ -420,7 +420,7 @@ function PlatformCard({
       <div className="mt-auto flex gap-2">
         {platform.blocked ? (
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 italic">
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />{platform.blocked}
+            <AlertTriangle className="w-3.5 h-3.5 text-warning" />{platform.blocked}
           </div>
         ) : isRunning ? (
           <button onClick={onStop} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors">
@@ -842,7 +842,7 @@ export function ScraperAdmin() {
               <span className="flex items-center gap-1.5">
                 Unmatched
                 {unmatchedCount > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold">
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-warning/20 text-warning text-[10px] font-bold">
                     {unmatchedCount}
                   </span>
                 )}
@@ -908,7 +908,7 @@ export function ScraperAdmin() {
           </div>
 
           {/* How it works */}
-          <div className="rounded-lg px-4 py-3 text-[11px] text-muted-foreground leading-relaxed" style={{ background: "rgba(0,212,170,0.05)", border: "1px solid rgba(0,212,170,0.15)" }}>
+          <div className="rounded-lg px-4 py-3 text-[11px] text-muted-foreground leading-relaxed" style={{ background: "hsl(var(--primary) / 0.05)", border: "1px solid hsl(var(--primary) / 0.15)" }}>
             <span className="font-semibold text-foreground">How scraping works: </span>
             Phase 1 discovers all WA stores on that platform and matches them to LCB records. Unmatched stores are saved to the Unmatched tab for manual linking.
             Phase 2 fetches menus in batches. If a store has fresh data (&lt;6h), the menu fetch is skipped but the platform slug is always saved.
@@ -954,7 +954,7 @@ export function ScraperAdmin() {
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   DuckDuckGo-searches each store without a website URL, saves the result, and auto-detects POSaBit menus.
                   {wfTotal !== null && !wfRunning && (
-                    <span className="ml-1 text-amber-400">{wfTotal - wfDone > 0 ? `${wfTotal - wfDone} stores remaining` : "All stores have websites"}</span>
+                    <span className="ml-1 text-warning">{wfTotal - wfDone > 0 ? `${wfTotal - wfDone} stores remaining` : "All stores have websites"}</span>
                   )}
                 </p>
               </div>
@@ -1144,8 +1144,8 @@ export function ScraperAdmin() {
                               <div className="space-y-3">
 
                                 {/* Discovery info header */}
-                                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                                  <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-500/80 mb-1">Linking from {pi?.label ?? u.platform}</p>
+                                <div className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2">
+                                  <p className="text-[10px] font-semibold uppercase tracking-widest text-warning/80 mb-1">Linking from {pi?.label ?? u.platform}</p>
                                   <p className="text-[12px] font-semibold text-foreground">{u.store_name}</p>
                                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                                     {u.address && <span className="text-[11px] text-muted-foreground">{u.address}{u.city ? `, ${u.city}` : ""}</span>}

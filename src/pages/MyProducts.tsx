@@ -54,12 +54,12 @@ const PRODUCT_TYPES = [
 ];
 
 const FARM_COLORS: Record<string, { text: string; bg: string }> = {
-  "Desert Valley Growers":       { text: "#00D4AA", bg: "hsl(168 100% 42% / 0.07)" },
-  "Painted Rooster Cannabis Co": { text: "#A78BFA", bg: "hsl(265 83% 76% / 0.07)"  },
-  "Kush Mountain Cannabis":      { text: "#10B981", bg: "hsl(160 84% 39% / 0.07)"  },
+  "Desert Valley Growers":       { text: "hsl(var(--primary))", bg: "hsl(var(--primary) / 0.07)" },
+  "Painted Rooster Cannabis Co": { text: "hsl(var(--chart-brand-b))", bg: "hsl(var(--chart-brand-b) / 0.07)"  },
+  "Kush Mountain Cannabis":      { text: "hsl(var(--success))", bg: "hsl(var(--success) / 0.07)"  },
 };
 function farmColor(name: string) {
-  return FARM_COLORS[name] ?? { text: "hsl(217 91% 60%)", bg: "hsl(217 91% 60% / 0.07)" };
+  return FARM_COLORS[name] ?? { text: "hsl(var(--info))", bg: "hsl(var(--info) / 0.07)" };
 }
 
 function productFarm(p: DbProduct): string {
@@ -594,10 +594,10 @@ export function MyProducts() {
         {!loading && products.length > 0 && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
             {[
-              { label: "Products",      value: uniqueProducts, color: "hsl(168 100% 42%)" },
-              { label: "Size Variants", value: totalVariants,  color: "hsl(217 91% 60%)" },
-              { label: "Available",     value: availableCount, color: "#10B981" },
-              { label: "Farms",         value: farms.length,   color: "#A78BFA" },
+              { label: "Products",      value: uniqueProducts, color: "hsl(var(--primary))" },
+              { label: "Size Variants", value: totalVariants,  color: "hsl(var(--info))" },
+              { label: "Available",     value: availableCount, color: "hsl(var(--success))" },
+              { label: "Farms",         value: farms.length,   color: "hsl(var(--chart-brand-b))" },
             ].map((s, i) => (
               <motion.div
                 key={s.label}

@@ -25,9 +25,9 @@ interface Alert {
 }
 
 const SEVERITY_ICON: Record<string, { icon: typeof Info; color: string }> = {
-  info:    { icon: Info, color: "hsl(217 91% 60%)" },
-  warning: { icon: AlertTriangle, color: "#F59E0B" },
-  urgent:  { icon: Zap, color: "#EF4444" },
+  info:    { icon: Info, color: "hsl(var(--info))" },
+  warning: { icon: AlertTriangle, color: "hsl(var(--warning))" },
+  urgent:  { icon: Zap, color: "hsl(var(--destructive))" },
 };
 
 export default function MarketPulse() {
@@ -71,7 +71,7 @@ export default function MarketPulse() {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
-      className="rounded-xl border border-[rgba(168,85,247,0.15)] bg-card overflow-hidden mb-5 relative"
+      className="rounded-xl border border-chart-brand-b/15 bg-card overflow-hidden mb-5 relative"
       style={{ boxShadow: "inset 0 1px 0 var(--glass-bg)" }}
     >
       {/* Header */}
@@ -83,15 +83,15 @@ export default function MarketPulse() {
           </CodyGlow>
           <div>
             <h2 className="text-[13px] font-semibold text-foreground">Market Intelligence</h2>
-            <div className="h-[2px] w-16 mt-0.5 rounded-full" style={{ background: "linear-gradient(90deg, #A855F7, #7C3AED)" }} />
+            <div className="h-[2px] w-16 mt-0.5 rounded-full" style={{ background: "linear-gradient(90deg, hsl(var(--chart-brand-b)), hsl(var(--chart-brand-b) / 0.7))" }} />
           </div>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500" />
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-chart-brand-b opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-chart-brand-b" />
           </span>
-          <span className="text-[10px] font-medium text-purple-500">Live</span>
+          <span className="text-[10px] font-medium text-chart-brand-b">Live</span>
         </div>
       </div>
 
@@ -152,7 +152,7 @@ export default function MarketPulse() {
           </div>
         ) : (
           <div className="text-center py-6 rounded-lg"
-            style={{ border: "1px solid rgba(168,85,247,0.15)", background: "rgba(168,85,247,0.02)" }}>
+            style={{ border: "1px solid hsl(var(--chart-brand-b) / 0.15)", background: "hsl(var(--chart-brand-b) / 0.02)" }}>
             <CodyGlow intensity="subtle" size="sm">
               <img src={codyIcon} alt="" className="w-8 h-8 mx-auto mb-2" style={{ filter: "brightness(3) saturate(0.1)" }} />
             </CodyGlow>

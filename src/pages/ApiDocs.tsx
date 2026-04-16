@@ -257,10 +257,10 @@ export function ApiDocs() {
       </div>
 
       {/* Callout */}
-      <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-5 py-4 flex items-start gap-3">
-        <Zap className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+      <div className="rounded-xl border border-warning/20 bg-warning/5 px-5 py-4 flex items-start gap-3">
+        <Zap className="w-4 h-4 text-warning mt-0.5 shrink-0" />
         <div>
-          <p className="text-sm font-semibold text-amber-500">Enterprise Feature</p>
+          <p className="text-sm font-semibold text-warning">Enterprise Feature</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             The REST API is available on the Enterprise tier. Manage your API keys in{" "}
             <a href="/settings" className="text-primary hover:underline">Settings → API Keys</a>.

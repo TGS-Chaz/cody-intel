@@ -24,9 +24,9 @@ interface MatchRow {
 }
 
 const METHOD_COLOR: Record<string, string> = {
-  strain_exact:           "text-emerald-400",
-  strain_partial:         "text-blue-400",
-  brand_category_weight:  "text-purple-400",
+  strain_exact:           "text-success",
+  strain_partial:         "text-info",
+  brand_category_weight:  "text-chart-brand-b",
 };
 
 function methodLabel(m: string) {
@@ -227,11 +227,11 @@ export function MatchReview({ orgId }: { orgId: string }) {
           </div>
           <div className="rounded-lg border border-border bg-card p-3">
             <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Verified</p>
-            <p className="text-xl font-bold tabular-nums text-emerald-400">{stats.verified}</p>
+            <p className="text-xl font-bold tabular-nums text-success">{stats.verified}</p>
           </div>
           <div className="rounded-lg border border-border bg-card p-3">
             <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Pending</p>
-            <p className="text-xl font-bold tabular-nums text-amber-400">{stats.total - stats.verified}</p>
+            <p className="text-xl font-bold tabular-nums text-warning">{stats.total - stats.verified}</p>
           </div>
         </div>
       )}
@@ -243,7 +243,7 @@ export function MatchReview({ orgId }: { orgId: string }) {
         </div>
       ) : grouped.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-12 text-center">
-          <Check className="w-8 h-8 text-emerald-500/60 mx-auto mb-2" />
+          <Check className="w-8 h-8 text-success/60 mx-auto mb-2" />
           <p className="text-sm font-medium text-foreground">
             {filter === "pending" ? "No pending matches." : "No matches yet."}
           </p>
@@ -267,7 +267,7 @@ export function MatchReview({ orgId }: { orgId: string }) {
                     {isCollapsed
                       ? <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                       : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
-                    <Store className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <Store className="w-3.5 h-3.5 text-warning shrink-0" />
                     <div className="min-w-0 text-left">
                       <p className="text-sm font-semibold text-foreground truncate">{g.storeName}</p>
                       {g.storeCity && <p className="text-[10px] text-muted-foreground">{g.storeCity}</p>}
@@ -278,8 +278,8 @@ export function MatchReview({ orgId }: { orgId: string }) {
                       {g.rows.length} match{g.rows.length !== 1 ? "es" : ""}
                     </span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                      topConf >= 0.9 ? "bg-emerald-500/10 text-emerald-400"
-                      : topConf >= 0.7 ? "bg-blue-500/10 text-blue-400"
+                      topConf >= 0.9 ? "bg-success/10 text-success"
+                      : topConf >= 0.7 ? "bg-info/10 text-info"
                       : "bg-secondary/60 text-muted-foreground"
                     }`}>
                       best {Math.round(topConf * 100)}%
@@ -301,14 +301,14 @@ export function MatchReview({ orgId }: { orgId: string }) {
                               {Math.round(r.confidence * 100)}%
                             </span>
                             {r.verified && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400">verified</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/10 text-success">verified</span>
                             )}
                           </div>
                           {!r.verified && (
                             <div className="flex gap-1">
                               <button
                                 onClick={() => confirm(r.id, true)}
-                                className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20"
+                                className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium bg-success/10 text-success hover:bg-success/20 border border-success/20"
                               >
                                 <Check className="w-3 h-3" /> Yes
                               </button>
@@ -344,7 +344,7 @@ export function MatchReview({ orgId }: { orgId: string }) {
 
                           {/* Matched menu_item side */}
                           <div className="flex items-start gap-2 min-w-0">
-                            <Store className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                            <Store className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" />
                             <div className="min-w-0 flex-1">
                               <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Found on menu</p>
                               <p className="font-semibold text-foreground">{r.menu_brand ?? "?"}</p>

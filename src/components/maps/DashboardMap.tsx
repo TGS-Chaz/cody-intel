@@ -179,7 +179,7 @@ export function DashboardMap() {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+    <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm" role="img" aria-label="Map of Washington state dispensaries showing brand coverage, gap opportunities, and stock risk">
       {/* Legend */}
       <div className="flex items-center gap-4 px-4 py-3 border-b border-border bg-sidebar flex-wrap">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground shrink-0">

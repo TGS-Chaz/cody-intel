@@ -115,9 +115,9 @@ function BrandsSection() {
             <div className="flex flex-wrap gap-2 min-h-[2rem]">
               {ownList.length === 0 && <p className="text-xs text-muted-foreground italic">None configured.</p>}
               {ownList.map(b => (
-                <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-teal-500/10 text-teal-500 text-xs font-medium border border-teal-500/20">
+                <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium border border-primary/20">
                   {b.brand_name}
-                  <button onClick={() => removeBrand(b.id)} className="ml-0.5 hover:text-red-400 transition-colors">
+                  <button onClick={() => removeBrand(b.id)} className="ml-0.5 hover:text-destructive transition-colors">
                     <X className="w-3 h-3" />
                   </button>
                 </span>
@@ -130,7 +130,7 @@ function BrandsSection() {
                 onChange={e => handleOwnInput(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && ownInput.trim()) addBrand(ownInput, true); }}
                 placeholder="Type brand name and press Enter…"
-                className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
               />
               {ownOpen && ownSuggestions.length > 0 && (
                 <div className="absolute z-20 top-full mt-1 w-full rounded-md border border-border bg-card shadow-lg overflow-hidden">
@@ -140,7 +140,7 @@ function BrandsSection() {
                       onClick={() => addBrand(r.name, true)}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors text-left"
                     >
-                      <Plus className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+                      <Plus className="w-3.5 h-3.5 text-primary shrink-0" />
                       {r.name}
                     </button>
                   ))}
@@ -155,9 +155,9 @@ function BrandsSection() {
             <div className="flex flex-wrap gap-2 min-h-[2rem]">
               {compList.length === 0 && <p className="text-xs text-muted-foreground italic">None configured.</p>}
               {compList.map(b => (
-                <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-orange-500/10 text-orange-400 text-xs font-medium border border-orange-500/20">
+                <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-warning/10 text-warning text-xs font-medium border border-warning/20">
                   {b.brand_name}
-                  <button onClick={() => removeBrand(b.id)} className="ml-0.5 hover:text-red-300 transition-colors">
+                  <button onClick={() => removeBrand(b.id)} className="ml-0.5 hover:text-destructive transition-colors">
                     <X className="w-3 h-3" />
                   </button>
                 </span>
@@ -170,7 +170,7 @@ function BrandsSection() {
                 onChange={e => handleCompInput(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && compInput.trim()) addBrand(compInput, false); }}
                 placeholder="Type brand name and press Enter…"
-                className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500"
+                className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-warning/30 focus:border-warning"
               />
               {compOpen && compSuggestions.length > 0 && (
                 <div className="absolute z-20 top-full mt-1 w-full rounded-md border border-border bg-card shadow-lg overflow-hidden">
@@ -180,7 +180,7 @@ function BrandsSection() {
                       onClick={() => addBrand(r.name, false)}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors text-left"
                     >
-                      <Plus className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                      <Plus className="w-3.5 h-3.5 text-warning shrink-0" />
                       {r.name}
                     </button>
                   ))}
@@ -483,7 +483,7 @@ function AlertRulesSection() {
                   {/* Delete */}
                   <button
                     onClick={() => deleteRule(rule.id)}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
                     title="Delete rule"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -760,7 +760,7 @@ function ApiKeysSection() {
                 {k.is_active && (
                   <button
                     onClick={() => revokeKey(k.id)}
-                    className="opacity-0 group-hover:opacity-100 text-[10px] text-amber-500 hover:text-amber-400 transition-all font-medium"
+                    className="opacity-0 group-hover:opacity-100 text-[10px] text-warning hover:text-warning/80 transition-all font-medium"
                   >
                     Revoke
                   </button>

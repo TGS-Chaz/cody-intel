@@ -191,6 +191,7 @@ export default function AppLayout() {
         <div className="px-3 pb-2">
           <button
             onClick={() => navigate("/ask")}
+            aria-label="Open Ask Cody assistant"
             className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-[12px] font-medium transition-all duration-150 hover:bg-primary/10 text-muted-foreground hover:text-primary"
             style={{
               background: location.pathname === "/ask"
@@ -230,6 +231,7 @@ export default function AppLayout() {
                 onClick={handleSignOut}
                 className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
                 title="Sign out"
+                aria-label="Sign out"
               >
                 <LogOut className="w-3.5 h-3.5" />
               </button>
@@ -343,6 +345,7 @@ export default function AppLayout() {
                 key={to}
                 to={to}
                 end={end}
+                aria-label={label}
                 className={`flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-medium transition-colors duration-150 ${
                   isActive ? "text-primary" : "text-muted-foreground"
                 }`}
@@ -354,6 +357,7 @@ export default function AppLayout() {
           })}
           <NavLink
             to="/ask"
+            aria-label="Open Ask Cody assistant"
             className={`flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-medium transition-colors duration-150 ${
               location.pathname === "/ask" ? "text-primary" : "text-muted-foreground"
             }`}

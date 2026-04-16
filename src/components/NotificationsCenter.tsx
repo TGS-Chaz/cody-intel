@@ -52,11 +52,11 @@ function timeAgo(d: string) {
 function SeverityIcon({ severity }: { severity?: string }) {
   switch (severity) {
     case "urgent":
-      return <Zap className="w-3 h-3 text-red-500 shrink-0 mt-0.5" />;
+      return <Zap className="w-3 h-3 text-destructive shrink-0 mt-0.5" />;
     case "warning":
-      return <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0 mt-0.5" />;
+      return <AlertTriangle className="w-3 h-3 text-warning shrink-0 mt-0.5" />;
     case "info":
-      return <Info className="w-3 h-3 text-blue-500 shrink-0 mt-0.5" />;
+      return <Info className="w-3 h-3 text-info shrink-0 mt-0.5" />;
     default:
       return <AlertCircle className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />;
   }
@@ -225,7 +225,7 @@ export default function NotificationsCenter() {
                           {item.title}
                         </p>
                         {item.source === "intel_alert" && (
-                          <span className="text-[8px] px-1 py-0.5 rounded bg-purple-500/10 text-purple-500 font-medium shrink-0">
+                          <span className="text-[8px] px-1 py-0.5 rounded bg-chart-brand-b/10 text-chart-brand-b font-medium shrink-0">
                             INTEL
                           </span>
                         )}

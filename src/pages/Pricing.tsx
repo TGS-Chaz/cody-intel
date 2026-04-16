@@ -4,10 +4,10 @@ import { motion } from "framer-motion";
 import { PLANS, FEATURE_LABELS, TIER_ORDER, usePlan, type PlanId, type FeatureKey } from "@/lib/plans";
 
 const CARDS: { id: PlanId; badge?: string; accent: string }[] = [
-  { id: "scout",        accent: "#3B82F6" },
-  { id: "analyst",      accent: "#A78BFA", badge: "Most Popular" },
-  { id: "professional", accent: "hsl(168 100% 42%)" },
-  { id: "enterprise",   accent: "#F59E0B" },
+  { id: "scout",        accent: "hsl(var(--info))" },
+  { id: "analyst",      accent: "hsl(var(--chart-brand-b))", badge: "Most Popular" },
+  { id: "professional", accent: "hsl(var(--primary))" },
+  { id: "enterprise",   accent: "hsl(var(--chart-brand-c))" },
 ];
 
 const FEATURE_GROUPS: { title: string; keys: FeatureKey[] }[] = [
@@ -98,7 +98,7 @@ export function Pricing() {
               )}
               {isCurrent && (
                 <div className="absolute -top-3 right-5 px-3 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-widest"
-                     style={{ background: "hsl(160 84% 39% / 0.16)", color: "#10B981", border: "1px solid hsl(160 84% 39% / 0.35)" }}>
+                     style={{ background: "hsl(var(--success) / 0.16)", color: "hsl(var(--success))", border: "1px solid hsl(var(--success) / 0.35)" }}>
                   Current Plan
                 </div>
               )}

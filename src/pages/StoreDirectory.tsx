@@ -20,16 +20,16 @@ const PLATFORM_LABELS: Record<string, string> = {
 
 // Badges: solid = has menu data, dashed outline = detected via slug only
 const PLATFORM_BADGES = [
-  { letter: "D", color: "#00D4AA", source: "dutchie-api",  slugField: "dutchie_slug"      as keyof IntelStore },
-  { letter: "L", color: "#3BB143", source: "leafly",        slugField: "leafly_slug"        as keyof IntelStore },
-  { letter: "P", color: "#5C6BC0", source: "posabit-api",   slugField: "posabit_feed_key"   as keyof IntelStore },
-  { letter: "W", color: "#F7931A", source: "weedmaps",      slugField: "weedmaps_slug"      as keyof IntelStore },
+  { letter: "D", color: "hsl(var(--platform-dutchie))",  source: "dutchie-api",  slugField: "dutchie_slug"      as keyof IntelStore },
+  { letter: "L", color: "hsl(var(--platform-leafly))",   source: "leafly",        slugField: "leafly_slug"        as keyof IntelStore },
+  { letter: "P", color: "hsl(var(--platform-posabit))",  source: "posabit-api",   slugField: "posabit_feed_key"   as keyof IntelStore },
+  { letter: "W", color: "hsl(var(--platform-weedmaps))", source: "weedmaps",      slugField: "weedmaps_slug"      as keyof IntelStore },
 ];
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
-  active:  { label: "Active",  cls: "text-emerald-500 bg-emerald-500/10" },
-  closed:  { label: "Closed",  cls: "text-red-400 bg-red-400/10" },
-  unknown: { label: "Unknown", cls: "text-amber-400 bg-amber-400/10" },
+  active:  { label: "Active",  cls: "text-success bg-success/10" },
+  closed:  { label: "Closed",  cls: "text-destructive bg-destructive/10" },
+  unknown: { label: "Unknown", cls: "text-warning bg-warning/10" },
 };
 
 // ── Tag system ────────────────────────────────────────────────────────────────

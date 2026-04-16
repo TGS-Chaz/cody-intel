@@ -69,16 +69,16 @@ type TabId = "brands" | "categories" | "coverage" | "prices" | "leaderboard" | "
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const PLATFORM_META: Record<string, { label: string; color: string }> = {
-  "dutchie-api": { label: "Dutchie",  color: "#00D4AA" },
-  "leafly":      { label: "Leafly",   color: "#3BB143" },
-  "posabit-api": { label: "POSaBit",  color: "#5C6BC0" },
-  "weedmaps":    { label: "Weedmaps", color: "#F7931A" },
+  "dutchie-api": { label: "Dutchie",  color: "hsl(var(--platform-dutchie))" },
+  "leafly":      { label: "Leafly",   color: "hsl(var(--platform-leafly))" },
+  "posabit-api": { label: "POSaBit",  color: "hsl(var(--platform-posabit))" },
+  "weedmaps":    { label: "Weedmaps", color: "hsl(var(--platform-weedmaps))" },
 };
 
 const CAT_COLORS = [
-  "#00D4AA","#3BB143","#5C6BC0","#F7931A","#E91E63",
-  "#9C27B0","#00BCD4","#FF5722","#607D8B","#8BC34A",
-  "#FFC107","#03A9F4","#795548","#009688","#FF9800",
+  "hsl(var(--chart-brand-a))","hsl(var(--chart-brand-d))","hsl(var(--chart-brand-e))","hsl(var(--platform-weedmaps))","hsl(var(--platform-jane))",
+  "hsl(var(--chart-brand-b))","hsl(var(--info))","hsl(var(--destructive))","hsl(var(--chart-neutral))","hsl(var(--success))",
+  "hsl(var(--chart-brand-c))","hsl(var(--primary))","hsl(var(--warning))","hsl(var(--platform-leafly))","hsl(var(--platform-weedmaps))",
 ];
 
 const thCls = "text-left px-4 py-2.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest";
@@ -275,6 +275,7 @@ function CategoryReport() {
             Export CSV
           </button>
         </div>
+        <div role="img" aria-label="Bar chart showing product count by category">
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={chartData} layout="vertical" margin={{ left: 16, right: 24, top: 0, bottom: 0 }}>
             <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
@@ -286,6 +287,7 @@ function CategoryReport() {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+        </div>
       </div>
       <div className="rounded-lg border border-border bg-card overflow-hidden shadow-premium">
         <table className="w-full text-sm">
@@ -379,7 +381,7 @@ function CoverageReport() {
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: "Total LCB Stores", value: totalStores, color: "text-foreground" },
-          { label: "Stores with Data", value: storesWithData, color: "text-emerald-500" },
+          { label: "Stores with Data", value: storesWithData, color: "text-success" },
           { label: "Market Coverage",  value: `${coveragePct}%`, color: "text-foreground", bar: coveragePct },
         ].map(s => (
           <div key={s.label} className="rounded-lg border border-border bg-card p-4 text-center shadow-sm">
@@ -427,7 +429,7 @@ function CoverageReport() {
           <tbody className="divide-y divide-border/40">
             {cities.map(row => {
               const pct = Math.round((row.with_data / row.total) * 100);
-              const color = pct >= 75 ? "#00D4AA" : pct >= 40 ? "#F7931A" : "#ef4444";
+              const color = pct >= 75 ? "hsl(var(--primary))" : pct >= 40 ? "hsl(var(--warning))" : "hsl(var(--destructive))";
               return (
                 <tr key={row.city} className="hover:bg-accent/30 transition-colors">
                   <td className="px-4 py-2 font-medium text-foreground capitalize">{row.city}</td>
@@ -689,8 +691,8 @@ function PriceReport() {
               const badgeStyle: React.CSSProperties = absDiff < 0.05
                 ? { background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" }
                 : diff > 0
-                  ? { background: "hsl(0 80% 60% / 0.12)", color: "hsl(0 72% 55%)", border: "1px solid hsl(0 72% 55% / 0.25)" }
-                  : { background: "hsl(142 70% 45% / 0.12)", color: "hsl(142 65% 40%)", border: "1px solid hsl(142 65% 40% / 0.25)" };
+                  ? { background: "hsl(var(--destructive) / 0.12)", color: "hsl(var(--destructive))", border: "1px solid hsl(var(--destructive) / 0.25)" }
+                  : { background: "hsl(var(--success) / 0.12)", color: "hsl(var(--success))", border: "1px solid hsl(var(--success) / 0.25)" };
               return (
                 <div key={category} className="flex flex-col items-start gap-0.5 rounded-lg border border-border bg-card px-3 py-2 min-w-[160px]">
                   <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">{category}</span>
@@ -711,6 +713,7 @@ function PriceReport() {
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
           Average Price by Category
         </p>
+        <div role="img" aria-label="Bar chart showing average price by product category">
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={chartData} layout="vertical" margin={{ left: 16, right: 40, top: 0, bottom: 0 }}>
             <XAxis type="number" tickFormatter={(v) => `$${v}`}
@@ -727,6 +730,7 @@ function PriceReport() {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+        </div>
       </div>
 
       {/* ── Section 2: Detail table ── */}
@@ -790,12 +794,12 @@ function PriceReport() {
                 {brandPriceRows.map((r, i) => {
                   const absDiff = Math.abs(r.vsMarket);
                   const vsLabel = absDiff < 0.05 ? "At market" : r.vsMarket > 0 ? `+$${absDiff.toFixed(2)}` : `-$${absDiff.toFixed(2)}`;
-                  const vsColor = absDiff < 0.05 ? "text-muted-foreground" : r.vsMarket > 0 ? "text-red-400" : "text-emerald-500";
+                  const vsColor = absDiff < 0.05 ? "text-muted-foreground" : r.vsMarket > 0 ? "text-destructive" : "text-success";
                   return (
                     <tr
                       key={`${r.brand}-${r.category}-${i}`}
                       className="hover:bg-accent/30 transition-colors"
-                      style={r.isOwn ? { background: "hsl(168 100% 42% / 0.05)" } : undefined}
+                      style={r.isOwn ? { background: "hsl(var(--primary) / 0.05)" } : undefined}
                     >
                       <td className="px-4 py-2 font-medium text-sm" style={r.isOwn ? { color: "hsl(var(--primary))" } : { color: "hsl(var(--foreground))" }}>
                         {r.brand}
@@ -881,7 +885,7 @@ function PriceReport() {
                       <span className="text-muted-foreground">Competitor avg: ${compStoreAvg.toFixed(2)} ({compStoreItems.length} items)</span>
                     )}
                     {storeAvgDiff != null && (
-                      <span className={Math.abs(storeAvgDiff) < 0.05 ? "text-muted-foreground" : storeAvgDiff > 0 ? "text-red-400" : "text-emerald-500"}>
+                      <span className={Math.abs(storeAvgDiff) < 0.05 ? "text-muted-foreground" : storeAvgDiff > 0 ? "text-destructive" : "text-success"}>
                         You are ${Math.abs(storeAvgDiff).toFixed(2)} {storeAvgDiff > 0 ? "above" : storeAvgDiff < 0 ? "below" : "at"} competitor avg
                       </span>
                     )}
@@ -890,7 +894,7 @@ function PriceReport() {
                   {/* Two-column layout */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {/* Our products */}
-                    <div className="rounded-lg border border-primary/30 overflow-hidden" style={{ background: "hsl(168 100% 42% / 0.03)" }}>
+                    <div className="rounded-lg border border-primary/30 overflow-hidden" style={{ background: "hsl(var(--primary) / 0.03)" }}>
                       <div className="px-3 py-2 border-b border-primary/20 flex items-center justify-between">
                         <p className="text-[10px] font-bold uppercase tracking-widest text-primary">Our Products ({ownStoreItems.length})</p>
                         {ownStoreAvg != null && <span className="text-[10px] font-mono-data text-primary">avg ${ownStoreAvg.toFixed(2)}</span>}
@@ -1037,7 +1041,7 @@ function StoreLeaderboard() {
               <tr key={s.id} className="hover:bg-accent/30 transition-colors">
                 <td className="px-4 py-2 font-mono-data text-xs text-muted-foreground">
                   {i < 3 ? (
-                    <Trophy className={`w-3.5 h-3.5 ${i === 0 ? "text-amber-400" : i === 1 ? "text-slate-400" : "text-amber-700"}`} />
+                    <Trophy className={`w-3.5 h-3.5 ${i === 0 ? "text-warning" : i === 1 ? "text-chart-neutral" : "text-muted-foreground"}`} />
                   ) : i + 1}
                 </td>
                 <td className="px-4 py-2 font-medium text-foreground">{s.name}</td>
@@ -1145,6 +1149,7 @@ function BrandDistribution() {
         <p className="text-[11px] text-muted-foreground mb-4">
           {all.length.toLocaleString()} total brands · how many stores each brand appears in
         </p>
+        <div role="img" aria-label="Histogram of brand reach distribution across stores">
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={distData} margin={{ left: 0, right: 16, top: 0, bottom: 0 }}>
             <XAxis dataKey="name" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
@@ -1159,6 +1164,7 @@ function BrandDistribution() {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -1405,10 +1411,10 @@ function GapAnalysis() {
   }
 
   const summaryCards = [
-    { label: "Gap Stores",        count: gapStores.length,         color: "#F59E0B", desc: "Carry competitor, not us" },
-    { label: "White Space",       count: whiteSpaceStores.length,  color: "hsl(217 91% 60%)", desc: "Carry neither" },
-    { label: "Exclusive Stores",  count: exclusiveStores.length,   color: "#10B981", desc: "Only our brand present" },
-    { label: "Competitive",       count: competitiveStores.length, color: "#A855F7", desc: "Both brands present" },
+    { label: "Gap Stores",        count: gapStores.length,         color: "hsl(var(--chart-brand-c))", desc: "Carry competitor, not us" },
+    { label: "White Space",       count: whiteSpaceStores.length,  color: "hsl(var(--info))", desc: "Carry neither" },
+    { label: "Exclusive Stores",  count: exclusiveStores.length,   color: "hsl(var(--success))", desc: "Only our brand present" },
+    { label: "Competitive",       count: competitiveStores.length, color: "hsl(var(--chart-brand-b))", desc: "Both brands present" },
   ];
 
   return (
@@ -1452,7 +1458,7 @@ function GapAnalysis() {
       {/* Gap Stores */}
       <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
         <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-warning shrink-0" />
           <p className="text-xs font-semibold text-foreground uppercase tracking-widest">Gap Stores — Sales Targets ({gapStores.length})</p>
         </div>
         {gapStores.length === 0 ? (
@@ -1472,7 +1478,7 @@ function GapAnalysis() {
                   <tr key={s.id} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
                     <td className="px-4 py-2 font-medium text-foreground text-xs">{s.name}</td>
                     <td className="px-4 py-2 text-xs text-muted-foreground">{s.city}</td>
-                    <td className="px-4 py-2 font-mono-data text-xs text-amber-500">{compBrand?.name}</td>
+                    <td className="px-4 py-2 font-mono-data text-xs text-warning">{compBrand?.name}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1484,7 +1490,7 @@ function GapAnalysis() {
       {/* White Space */}
       <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
         <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: "hsl(217 91% 60%)" }} />
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: "hsl(var(--info))" }} />
           <p className="text-xs font-semibold text-foreground uppercase tracking-widest">White Space — Untouched Stores ({whiteSpaceStores.length})</p>
         </div>
         {whiteSpaceStores.length === 0 ? (
@@ -1516,7 +1522,7 @@ function GapAnalysis() {
       {/* Exclusive Stores */}
       <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
         <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-success shrink-0" />
           <p className="text-xs font-semibold text-foreground uppercase tracking-widest">Exclusive Stores — Protect These ({exclusiveStores.length})</p>
         </div>
         {exclusiveStores.length === 0 ? (
@@ -1536,7 +1542,7 @@ function GapAnalysis() {
                   <tr key={s.id} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
                     <td className="px-4 py-2 font-medium text-foreground text-xs">{s.name}</td>
                     <td className="px-4 py-2 text-xs text-muted-foreground">{s.city}</td>
-                    <td className="px-4 py-2 font-mono-data text-xs text-emerald-500">{exclOwnCounts[s.id] ?? "—"}</td>
+                    <td className="px-4 py-2 font-mono-data text-xs text-success">{exclOwnCounts[s.id] ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1548,7 +1554,7 @@ function GapAnalysis() {
       {/* Competitive Stores */}
       <div className="rounded-xl border border-border bg-card/60 overflow-hidden">
         <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-purple-500 shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-chart-brand-b shrink-0" />
           <p className="text-xs font-semibold text-foreground uppercase tracking-widest">Competitive Stores — Both Present ({competitiveStores.length})</p>
         </div>
         {competitiveStores.length === 0 ? (
@@ -1569,8 +1575,8 @@ function GapAnalysis() {
                   <tr key={s.id} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
                     <td className="px-4 py-2 font-medium text-foreground text-xs">{s.name}</td>
                     <td className="px-4 py-2 text-xs text-muted-foreground">{s.city}</td>
-                    <td className="px-4 py-2 font-mono-data text-xs text-emerald-500">{compOwnCounts[s.id] ?? "—"}</td>
-                    <td className="px-4 py-2 font-mono-data text-xs text-purple-400">{compTheirCounts[s.id] ?? "—"}</td>
+                    <td className="px-4 py-2 font-mono-data text-xs text-success">{compOwnCounts[s.id] ?? "—"}</td>
+                    <td className="px-4 py-2 font-mono-data text-xs text-chart-brand-b">{compTheirCounts[s.id] ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1617,7 +1623,7 @@ function DealsReport() {
       {/* Coming soon banner */}
       <div
         className="rounded-xl border p-5 flex items-start gap-3"
-        style={{ background: "hsl(168 100% 42% / 0.05)", borderColor: "hsl(168 100% 42% / 0.2)" }}
+        style={{ background: "hsl(var(--primary) / 0.05)", borderColor: "hsl(var(--primary) / 0.2)" }}
       >
         <Tag className="w-5 h-5 text-primary shrink-0 mt-0.5" />
         <div>
@@ -1665,7 +1671,7 @@ function DealsReport() {
                       </td>
                       <td className="px-4 py-2.5 text-muted-foreground">{a.brand_name ?? "—"}</td>
                       <td className="px-4 py-2.5">
-                        <span className={`font-semibold ${isDown ? "text-green-500" : "text-red-400"}`}>
+                        <span className={`font-semibold ${isDown ? "text-success" : "text-destructive"}`}>
                           {pct != null ? `${pct > 0 ? "+" : ""}${pct}%` : "—"}
                           {det.old_price != null && det.new_price != null && (
                             <span className="text-muted-foreground font-normal ml-1.5">
@@ -1700,7 +1706,7 @@ function DealsReport() {
                   <p className="text-xs text-muted-foreground">{d.deal_description}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-sm font-bold text-green-500">
+                  <p className="text-sm font-bold text-success">
                     {d.discount_pct ? `-${d.discount_pct}%` : `$${d.deal_price}`}
                   </p>
                   <p className="text-[10px] text-muted-foreground">{d.intel_store?.name}</p>

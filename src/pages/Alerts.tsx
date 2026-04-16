@@ -48,9 +48,9 @@ function timeAgo(d: string) {
 
 function SeverityBadge({ severity }: { severity: string }) {
   const styles: Record<string, string> = {
-    urgent: "bg-red-500/10 text-red-500 border-red-500/20",
-    warning: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-    info: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+    urgent: "bg-destructive/10 text-destructive border-destructive/20",
+    warning: "bg-warning/10 text-warning border-warning/20",
+    info: "bg-info/10 text-info border-info/20",
   };
   const icons: Record<string, typeof Zap> = {
     urgent: Zap,
@@ -69,10 +69,10 @@ function SeverityBadge({ severity }: { severity: string }) {
 function AlertTypeIcon({ type }: { type: string }) {
   const className = "w-3.5 h-3.5 shrink-0";
   switch (type) {
-    case "brand_removed": return <TrendingDown className={`${className} text-red-500`} />;
-    case "brand_added": return <TrendingUp className={`${className} text-green-500`} />;
-    case "stock_out": return <Package className={`${className} text-amber-500`} />;
-    case "price_change": return <Tag className={`${className} text-blue-500`} />;
+    case "brand_removed": return <TrendingDown className={`${className} text-destructive`} />;
+    case "brand_added": return <TrendingUp className={`${className} text-success`} />;
+    case "stock_out": return <Package className={`${className} text-warning`} />;
+    case "price_change": return <Tag className={`${className} text-info`} />;
     default: return <Bell className={`${className} text-muted-foreground`} />;
   }
 }
@@ -227,12 +227,12 @@ export function Alerts() {
           className="flex items-center gap-3 p-4 rounded-xl border"
           style={{ background: "hsl(0 80% 50% / 0.08)", borderColor: "hsl(0 80% 50% / 0.25)" }}
         >
-          <Zap className="w-5 h-5 text-red-500 shrink-0" />
+          <Zap className="w-5 h-5 text-destructive shrink-0" />
           <div className="flex-1">
-            <p className="text-sm font-semibold text-red-500">{urgentCount} critical alert{urgentCount > 1 ? "s" : ""} require your attention</p>
+            <p className="text-sm font-semibold text-destructive">{urgentCount} critical alert{urgentCount > 1 ? "s" : ""} require your attention</p>
             <p className="text-xs text-muted-foreground mt-0.5">Your brands may have been removed from store menus</p>
           </div>
-          <button onClick={() => setFilterSeverity("urgent")} className="text-xs text-red-500 hover:text-red-400 font-medium">
+          <button onClick={() => setFilterSeverity("urgent")} className="text-xs text-destructive hover:text-destructive/80 font-medium">
             View critical →
           </button>
         </motion.div>

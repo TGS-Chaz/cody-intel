@@ -201,7 +201,7 @@ export function ProductAffinity() {
       {/* Reverse affinity — warm leads */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-          <ArrowLeftRight className="w-3.5 h-3.5 text-amber-400" />
+          <ArrowLeftRight className="w-3.5 h-3.5 text-warning" />
           <div>
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
               Warm-Lead Stores
@@ -229,7 +229,7 @@ export function ProductAffinity() {
                 <tr key={r.store_id} className="hover:bg-accent/30">
                   <td className="px-4 py-2 text-xs font-medium text-foreground">{r.store_name}</td>
                   <td className="px-4 py-2 text-xs text-muted-foreground">{r.city ?? "—"}</td>
-                  <td className="px-4 py-2 text-xs font-mono-data text-right font-semibold text-amber-400">
+                  <td className="px-4 py-2 text-xs font-mono-data text-right font-semibold text-warning">
                     {r.targetPct.toFixed(0)}%
                   </td>
                 </tr>

@@ -77,7 +77,10 @@ const DIMENSION_LABELS: Record<Dimension, string> = {
   city: "City", store: "Store", brand: "Brand", category: "Category", platform: "Platform",
 };
 
-const COLORS = ["#00D4AA","#3BB143","#5C6BC0","#F7931A","#E91E63","#9C27B0","#00BCD4","#FF5722","#607D8B","#8BC34A"];
+const COLORS = [
+  "hsl(var(--primary))","hsl(var(--chart-brand-d))","hsl(var(--chart-brand-e))","hsl(var(--chart-brand-c))","hsl(var(--destructive))",
+  "hsl(var(--chart-brand-b))","hsl(var(--info))","hsl(var(--platform-weedmaps))","hsl(var(--chart-neutral))","hsl(var(--success))",
+];
 
 const DEFAULT_CONFIG: ReportConfig = {
   dimension: "city", metrics: ["store_count","product_count"],

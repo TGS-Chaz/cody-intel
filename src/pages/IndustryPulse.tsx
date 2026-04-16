@@ -109,9 +109,9 @@ interface AudienceDef {
 }
 
 const AUDIENCES: AudienceDef[] = [
-  { key: "retailers", label: "Impact on Retailers",        icon: Store, textColor: "text-blue-400",   bgColor: "bg-blue-500/5",   borderCol: "border-blue-500/40" },
-  { key: "farms",     label: "Impact on Farms & Producers", icon: Leaf,  textColor: "text-emerald-400", bgColor: "bg-emerald-500/5", borderCol: "border-emerald-500/40" },
-  { key: "consumers", label: "Impact on Consumers",        icon: User,  textColor: "text-purple-400", bgColor: "bg-purple-500/5",  borderCol: "border-purple-500/40" },
+  { key: "retailers", label: "Impact on Retailers",        icon: Store, textColor: "text-info",    bgColor: "bg-info/5",    borderCol: "border-info/40" },
+  { key: "farms",     label: "Impact on Farms & Producers", icon: Leaf,  textColor: "text-success",  bgColor: "bg-success/5",  borderCol: "border-success/40" },
+  { key: "consumers", label: "Impact on Consumers",        icon: User,  textColor: "text-chart-brand-b", bgColor: "bg-chart-brand-b/5", borderCol: "border-chart-brand-b/40" },
 ];
 
 function AudienceSection({

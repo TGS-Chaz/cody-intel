@@ -219,7 +219,7 @@ export function SellThrough() {
       </div>
 
       {limited && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-600">
+        <div className="rounded-xl border border-warning/20 bg-warning/5 px-4 py-3 text-sm text-warning">
           Data limited to 500 products to avoid browser freeze. Showing a representative sample.
         </div>
       )}

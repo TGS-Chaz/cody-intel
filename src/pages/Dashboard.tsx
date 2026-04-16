@@ -220,17 +220,17 @@ function SectionCard({
 // ── Alert severity helpers ─────────────────────────────────────────────────────
 
 function AlertIcon({ severity }: { severity: string }) {
-  if (severity === "urgent") return <Zap className="w-3.5 h-3.5 shrink-0 text-red-500" />;
-  if (severity === "warning") return <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-500" />;
-  if (severity === "info") return <Info className="w-3.5 h-3.5 shrink-0 text-blue-500" />;
+  if (severity === "urgent") return <Zap className="w-3.5 h-3.5 shrink-0 text-destructive" />;
+  if (severity === "warning") return <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-warning" />;
+  if (severity === "info") return <Info className="w-3.5 h-3.5 shrink-0 text-info" />;
   return <Bell className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />;
 }
 
-function alertBorderColor(severity: string): string {
-  if (severity === "urgent") return "border-l-red-500";
-  if (severity === "warning") return "border-l-amber-500";
-  if (severity === "info") return "border-l-blue-500";
-  return "border-l-border";
+function severityLabel(severity: string): { text: string; cls: string } {
+  if (severity === "urgent") return { text: "Critical", cls: "bg-destructive/10 text-destructive" };
+  if (severity === "warning") return { text: "Warning", cls: "bg-warning/10 text-warning" };
+  if (severity === "info") return { text: "Info", cls: "bg-info/10 text-info" };
+  return { text: "Notice", cls: "bg-muted text-muted-foreground" };
 }
 
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
@@ -400,7 +400,7 @@ export function Dashboard() {
           </div>
           {fast?.freshness && (
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
               Data updated {timeAgo(fast.freshness)}
             </div>
           )}
@@ -421,61 +421,61 @@ export function Dashboard() {
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
             <KpiCard
               icon={Store}
-              iconColor="hsl(168 100% 42%)"
+              iconColor="hsl(var(--primary))"
               accentClass="stat-accent-teal"
               label="Total Stores"
               value={totalStores}
               subtitle="Active dispensaries"
-              barColor="hsl(168 100% 42%)"
+              barColor="hsl(var(--primary))"
               barWidth={`${Math.min((totalStores / 500) * 100, 100)}%`}
               delay={0.1}
               onClick={() => navigate("/stores")}
             />
             <KpiCard
               icon={Package}
-              iconColor="hsl(217 91% 60%)"
+              iconColor="hsl(var(--info))"
               accentClass="stat-accent-blue"
               label="Products Tracked"
               value={storesWithMenus}
               subtitle="Stores with live menus"
-              barColor="hsl(217 91% 60%)"
+              barColor="hsl(var(--info))"
               barWidth="80%"
               delay={0.18}
               onClick={() => navigate("/stores")}
             />
             <KpiCard
               icon={TrendingUp}
-              iconColor="hsl(265 83% 76%)"
+              iconColor="hsl(var(--chart-brand-b))"
               accentClass="stat-accent-amber"
               label="Your Brands"
               value={ownBrandCount}
               subtitle={ownBrandCount > 0 ? "Brands being tracked" : "Set up in My Products"}
-              barColor="hsl(265 83% 76%)"
+              barColor="hsl(var(--chart-brand-b))"
               barWidth={`${Math.min(ownBrandCount * 20, 100)}%`}
               delay={0.26}
               onClick={() => navigate("/my-products")}
             />
             <KpiCard
               icon={Bell}
-              iconColor={alertCount > 0 ? "hsl(0 84% 60%)" : "hsl(38 92% 55%)"}
+              iconColor={alertCount > 0 ? "hsl(var(--destructive))" : "hsl(var(--warning))"}
               accentClass=""
               label="Active Alerts"
               value={alertCount}
               subtitle={alertCount > 0 ? "Require attention" : "All clear"}
-              barColor={alertCount > 0 ? "hsl(0 84% 60%)" : "hsl(38 92% 55%)"}
+              barColor={alertCount > 0 ? "hsl(var(--destructive))" : "hsl(var(--warning))"}
               barWidth={`${Math.min(alertCount * 5, 100)}%`}
               delay={0.34}
               onClick={() => navigate("/alerts")}
             />
             <KpiCard
               icon={BarChart2}
-              iconColor="hsl(160 84% 39%)"
+              iconColor="hsl(var(--success))"
               accentClass="stat-accent-emerald"
               label="Coverage"
               value={coveragePct}
               suffix="%"
               subtitle="Stores with menu data"
-              barColor="hsl(160 84% 39%)"
+              barColor="hsl(var(--success))"
               barWidth={`${coveragePct}%`}
               delay={0.42}
               onClick={() => navigate("/reports")}
@@ -490,7 +490,7 @@ export function Dashboard() {
           <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Data Quality</span>
           <span className="text-foreground"><strong>{fast.normStats.normalized.toLocaleString()}</strong> products normalized</span>
           {fast.normStats.needsReview > 0 && (
-            <span className="text-amber-500"><strong>{fast.normStats.needsReview}</strong> need review</span>
+            <span className="text-warning"><strong>{fast.normStats.needsReview}</strong> need review</span>
           )}
           <button
             onClick={async () => {
@@ -569,7 +569,7 @@ export function Dashboard() {
                   <div className="flex-1 bg-secondary rounded-full h-1.5 overflow-hidden">
                     <motion.div
                       className="h-full rounded-full"
-                      style={{ background: "#00D4AA" }}
+                      style={{ background: "hsl(var(--primary))" }}
                       initial={{ width: 0 }}
                       animate={{ width: `${Math.round((bp.store_count / maxPresenceStores) * 100)}%` }}
                       transition={{ duration: 0.8, ease: [0.23, 1, 0.32, 1] }}
@@ -625,7 +625,7 @@ export function Dashboard() {
                   <div className="w-20 bg-secondary rounded-full h-1 overflow-hidden shrink-0">
                     <motion.div
                       className="h-full rounded-full"
-                      style={{ background: isOwn ? "#00D4AA" : "#A855F7" }}
+                      style={{ background: isOwn ? "hsl(var(--primary))" : "hsl(var(--chart-brand-b))" }}
                       initial={{ width: 0 }}
                       animate={{ width: `${Math.round((mb.store_count / maxBrandStores) * 100)}%` }}
                       transition={{ duration: 0.8, delay: i * 0.05, ease: [0.23, 1, 0.32, 1] }}
@@ -696,16 +696,21 @@ export function Dashboard() {
             </div>
           ) : (
             <div className="space-y-1">
-              {fast.recentAlerts.map((alert) => (
+              {fast.recentAlerts.map((alert) => {
+                const sev = severityLabel(alert.severity);
+                return (
                 <div
                   key={alert.id}
-                  className={`flex items-start gap-2.5 py-2 px-2 rounded-lg border-l-2 ${alertBorderColor(alert.severity)} bg-transparent hover:bg-accent/20 transition-colors`}
+                  className="flex items-start gap-2.5 py-2 px-2 rounded-lg bg-transparent hover:bg-accent/20 transition-colors"
                 >
                   <div className="mt-0.5 shrink-0">
                     <AlertIcon severity={alert.severity} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-medium text-foreground truncate">{alert.title}</p>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${sev.cls}`}>{sev.text}</span>
+                      <p className="text-[12px] font-medium text-foreground truncate">{alert.title}</p>
+                    </div>
                     {alert.brand_name && (
                       <p className="text-[10px] text-muted-foreground truncate">{alert.brand_name}</p>
                     )}
@@ -714,7 +719,8 @@ export function Dashboard() {
                     {timeAgo(alert.created_at)}
                   </span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </SectionCard>
