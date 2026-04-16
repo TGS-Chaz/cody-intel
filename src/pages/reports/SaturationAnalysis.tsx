@@ -51,9 +51,9 @@ function Skeleton({ rows = 8 }: { rows?: number }) {
 
 function StatusBadge({ status }: { status: CityData["status"] }) {
   const cfg = {
-    oversaturated: { bg: "bg-red-500/10", text: "text-red-500", label: "Oversaturated" },
-    healthy:       { bg: "bg-green-500/10", text: "text-green-500", label: "Healthy" },
-    underserved:   { bg: "bg-amber-500/10", text: "text-amber-500", label: "Underserved" },
+    oversaturated: { bg: "bg-destructive/10", text: "text-destructive", label: "Oversaturated" },
+    healthy:       { bg: "bg-success/10", text: "text-success", label: "Healthy" },
+    underserved:   { bg: "bg-warning/10", text: "text-warning", label: "Underserved" },
   }[status];
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${cfg.bg} ${cfg.text}`}>
@@ -181,9 +181,9 @@ export function SaturationAnalysis() {
       {/* Summary stats */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Oversaturated Cities", value: oversaturated, color: "text-red-500" },
-          { label: "Healthy Markets",       value: healthy,       color: "text-green-500" },
-          { label: "Underserved Markets",   value: underserved,   color: "text-amber-500" },
+          { label: "Oversaturated Cities", value: oversaturated, color: "text-destructive" },
+          { label: "Healthy Markets",       value: healthy,       color: "text-success" },
+          { label: "Underserved Markets",   value: underserved,   color: "text-warning" },
         ].map(({ label, value, color }) => (
           <div key={label} className="rounded-xl border border-border bg-card p-5">
             <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>

@@ -47,9 +47,9 @@ function Skeleton({ rows = 8 }: { rows?: number }) {
 
 function VelocityBadge({ v }: { v: Velocity }) {
   const cfg = {
-    HIGH:   { bg: "bg-green-500/10",  text: "text-green-500",  label: "Fast Mover" },
-    MEDIUM: { bg: "bg-amber-500/10",  text: "text-amber-500",  label: "Medium"     },
-    LOW:    { bg: "bg-red-500/10",    text: "text-red-500",    label: "Shelf Warmer" },
+    HIGH:   { bg: "bg-success/10",  text: "text-success",  label: "Fast Mover" },
+    MEDIUM: { bg: "bg-warning/10",  text: "text-warning",  label: "Medium"     },
+    LOW:    { bg: "bg-destructive/10",    text: "text-destructive",    label: "Shelf Warmer" },
   }[v];
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${cfg.bg} ${cfg.text}`}>
@@ -204,9 +204,9 @@ export function SellThrough() {
       <div className="grid grid-cols-4 gap-4">
         {[
           { label: "Products Tracked",   value: products.length, color: "text-primary",      icon: Zap          },
-          { label: "Fast Movers",         value: products.filter(p => p.velocity === "HIGH").length,   color: "text-green-500", icon: Zap   },
-          { label: "Medium Velocity",     value: mediumCount,     color: "text-amber-500",    icon: Clock        },
-          { label: "Shelf Warmers",       value: products.filter(p => p.velocity === "LOW").length,    color: "text-red-500",   icon: TrendingDown },
+          { label: "Fast Movers",         value: products.filter(p => p.velocity === "HIGH").length,   color: "text-success", icon: Zap   },
+          { label: "Medium Velocity",     value: mediumCount,     color: "text-warning",    icon: Clock        },
+          { label: "Shelf Warmers",       value: products.filter(p => p.velocity === "LOW").length,    color: "text-destructive",   icon: TrendingDown },
         ].map(({ label, value, color, icon: Icon }) => (
           <div key={label} className="rounded-xl border border-border bg-card p-5">
             <div className="flex items-center gap-2 mb-1">

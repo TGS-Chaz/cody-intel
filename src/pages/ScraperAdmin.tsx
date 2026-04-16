@@ -24,7 +24,7 @@ const PLATFORMS: Platform[] = [
     id: "dutchie",
     label: "Dutchie",
     source: "dutchie-api",
-    color: "#00D4AA",
+    color: "hsl(var(--platform-dutchie))",
     description: "Discovers WA stores via Dutchie GraphQL API, matches to LCB stores by address, fetches complete menus",
     functionName: "scrape-dutchie",
     batchSize: 10,
@@ -33,7 +33,7 @@ const PLATFORMS: Platform[] = [
     id: "posabit",
     label: "POSaBit",
     source: "posabit-api",
-    color: "#5C6BC0",
+    color: "hsl(var(--platform-posabit))",
     description: "Scans intel_stores websites for POSaBit embeds, fetches menus via MCX API",
     functionName: "scrape-posabit",
     batchSize: 2,
@@ -42,7 +42,7 @@ const PLATFORMS: Platform[] = [
     id: "leafly",
     label: "Leafly",
     source: "leafly",
-    color: "#3BB143",
+    color: "hsl(var(--platform-leafly))",
     description: "Discovers WA dispensaries via Leafly WA state page, matches to LCB stores, fetches complete menus",
     functionName: "scrape-leafly",
     batchSize: 4,
@@ -51,7 +51,7 @@ const PLATFORMS: Platform[] = [
     id: "weedmaps",
     label: "Weedmaps",
     source: "weedmaps",
-    color: "#F7931A",
+    color: "hsl(var(--platform-weedmaps))",
     description: "Discovers WA dispensaries via Weedmaps directory, matches to LCB stores, fetches complete menus",
     functionName: "scrape-weedmaps",
     batchSize: 5,
@@ -60,7 +60,7 @@ const PLATFORMS: Platform[] = [
     id: "jane",
     label: "Jane",
     source: "jane-embed",
-    color: "#E91E63",
+    color: "hsl(var(--platform-jane))",
     description: "iHeartJane menus via the /embed/stores/{id}/menu page — no proxy needed",
     functionName: "scrape-jane",
     batchSize: 3,
@@ -72,10 +72,10 @@ const TOTAL_STORES = 458;
 
 // Platform info for unmatched view
 const PLATFORM_INFO: Record<string, { letter: string; color: string; label: string; slugField: string; functionName: string }> = {
-  dutchie:  { letter: "D", color: "#00D4AA", label: "Dutchie",   slugField: "dutchie_slug",   functionName: "scrape-dutchie"  },
-  leafly:   { letter: "L", color: "#3BB143", label: "Leafly",    slugField: "leafly_slug",    functionName: "scrape-leafly"   },
-  weedmaps: { letter: "W", color: "#F7931A", label: "Weedmaps",  slugField: "weedmaps_slug",  functionName: "scrape-weedmaps" },
-  jane:     { letter: "J", color: "#E91E63", label: "Jane",      slugField: "jane_store_id",  functionName: "scrape-jane"     },
+  dutchie:  { letter: "D", color: "hsl(var(--platform-dutchie))",  label: "Dutchie",   slugField: "dutchie_slug",   functionName: "scrape-dutchie"  },
+  leafly:   { letter: "L", color: "hsl(var(--platform-leafly))",   label: "Leafly",    slugField: "leafly_slug",    functionName: "scrape-leafly"   },
+  weedmaps: { letter: "W", color: "hsl(var(--platform-weedmaps))", label: "Weedmaps",  slugField: "weedmaps_slug",  functionName: "scrape-weedmaps" },
+  jane:     { letter: "J", color: "hsl(var(--platform-jane))",     label: "Jane",      slugField: "jane_store_id",  functionName: "scrape-jane"     },
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -369,7 +369,7 @@ function PlatformCard({
   const freshnessColor = (iso: string | null) => {
     if (!iso) return "text-muted-foreground";
     const h = (Date.now() - new Date(iso).getTime()) / 3_600_000;
-    return h < 24 ? "text-emerald-500" : h < 72 ? "text-amber-400" : "text-red-400";
+    return h < 24 ? "text-success" : h < 72 ? "text-warning" : "text-destructive";
   };
 
   return (
@@ -379,7 +379,7 @@ function PlatformCard({
           <h3 className="text-sm font-bold text-foreground">{platform.label}</h3>
           <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{platform.description}</p>
         </div>
-        {runStatus.state === "done" && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />}
+        {runStatus.state === "done" && <CheckCircle2 className="w-4 h-4 text-success shrink-0 mt-0.5" />}
         {runStatus.state === "error" && <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />}
       </div>
       <div className="grid grid-cols-3 gap-2">
@@ -411,7 +411,7 @@ function PlatformCard({
         </div>
       )}
       {(runStatus.state === "done" || runStatus.state === "error") && runStatus.message && (
-        <p className={`text-[11px] flex items-start gap-1.5 ${runStatus.state === "error" ? "text-destructive" : "text-emerald-500"}`}>
+        <p className={`text-[11px] flex items-start gap-1.5 ${runStatus.state === "error" ? "text-destructive" : "text-success"}`}>
           {runStatus.state === "error" ? <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" /> : <CheckCircle2 className="w-3 h-3 mt-0.5 shrink-0" />}
           <span className="font-mono-data">{runStatus.message}</span>
         </p>
@@ -1058,7 +1058,7 @@ export function ScraperAdmin() {
                       <>
                         <tr
                           key={u.id}
-                          className={`transition-colors duration-100 ${isLinking ? "bg-accent/20" : linked ? "bg-emerald-500/5" : "hover:bg-accent/30"}`}
+                          className={`transition-colors duration-100 ${isLinking ? "bg-accent/20" : linked ? "bg-success/5" : "hover:bg-accent/30"}`}
                         >
                           {/* Platform badge */}
                           <td className="px-4 py-2.5">
@@ -1099,12 +1099,12 @@ export function ScraperAdmin() {
                           <td className="px-4 py-2.5">
                             {linked ? (
                               <div className="flex items-center gap-2">
-                                <span className="text-[11px] text-emerald-500 flex items-center gap-1">
+                                <span className="text-[11px] text-success flex items-center gap-1">
                                   <CheckCircle2 className="w-3 h-3" />
                                   {linked.name.length > 14 ? linked.name.slice(0, 14) + "…" : linked.name}
                                 </span>
                                 {wasScraped ? (
-                                  <span className="text-[10px] text-emerald-500">✓ scraped</span>
+                                  <span className="text-[10px] text-success">✓ scraped</span>
                                 ) : scrapeErr ? (
                                   <span className="text-[10px] text-destructive" title={scrapeErr}>⚠ failed</span>
                                 ) : (
@@ -1176,7 +1176,7 @@ export function ScraperAdmin() {
                                         <button
                                           key={s.id}
                                           onClick={() => setLinkSelected(s)}
-                                          className={`w-full text-left px-3 py-2.5 transition-colors hover:bg-accent/50 ${linkSelected?.id === s.id ? "bg-primary/10 border-l-2 border-primary" : ""}`}
+                                          className={`w-full text-left px-3 py-2.5 transition-colors hover:bg-accent/50 ${linkSelected?.id === s.id ? "bg-primary/10 border border-primary/30" : ""}`}
                                         >
                                           <div className="flex items-baseline gap-2 flex-wrap">
                                             <span className="text-[12px] font-semibold text-foreground">{s.name}</span>

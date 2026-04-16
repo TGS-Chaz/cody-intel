@@ -74,17 +74,17 @@ function inferBillStatus(item: PulseItem): BillStatus {
 function billStatusColor(s: BillStatus): string {
   switch (s) {
     case "Enacted":            return "bg-primary/15 text-primary border-primary/30";
-    case "Passed One Chamber": return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
-    case "In Committee":       return "bg-amber-500/15 text-amber-400 border-amber-500/30";
-    case "Died":               return "bg-red-500/15 text-red-400 border-red-500/30";
+    case "Passed One Chamber": return "bg-success/15 text-success border-success/30";
+    case "In Committee":       return "bg-warning/15 text-warning border-warning/30";
+    case "Died":               return "bg-destructive/15 text-destructive border-destructive/30";
     default:                   return "bg-muted/40 text-muted-foreground border-border";
   }
 }
 
 function relevanceColor(r: number | null): string {
   if (r == null) return "text-muted-foreground";
-  if (r >= 8) return "text-red-400";
-  if (r >= 5) return "text-amber-400";
+  if (r >= 8) return "text-destructive";
+  if (r >= 5) return "text-warning";
   return "text-muted-foreground";
 }
 
@@ -368,7 +368,7 @@ function IndustryPulseInner() {
 
                 {/* Outcome callout */}
                 {item.ai_outcome && (
-                  <div className="mb-3 rounded-md bg-primary/5 border-l-2 border-primary/50 px-3 py-2">
+                  <div className="mb-3 rounded-md bg-primary/5 border border-primary/20 px-3 py-2">
                     <p className="text-[10px] uppercase tracking-widest font-semibold text-primary mb-1">Current outcome</p>
                     <p className="text-xs text-foreground/80 leading-relaxed">{item.ai_outcome}</p>
                   </div>
@@ -397,7 +397,7 @@ function IndustryPulseInner() {
 
                 {/* Fallback: original single ai_impact when no per-audience breakdown */}
                 {audienceCounts.length === 0 && item.ai_impact && (
-                  <div className="mt-2 rounded-md bg-primary/5 border-l-2 border-primary/50 px-3 py-2">
+                  <div className="mt-2 rounded-md bg-primary/5 border border-primary/20 px-3 py-2">
                     <p className="text-[10px] uppercase tracking-widest font-semibold text-primary mb-1">
                       How this affects your business
                     </p>

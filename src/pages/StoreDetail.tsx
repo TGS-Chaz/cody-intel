@@ -37,9 +37,9 @@ const STATUS_OPTS = [
 ];
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
-  active:  { label: "Active",  cls: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" },
-  closed:  { label: "Closed",  cls: "text-red-400 bg-red-400/10 border-red-400/20" },
-  unknown: { label: "Unknown", cls: "text-amber-400 bg-amber-400/10 border-amber-400/20" },
+  active:  { label: "Active",  cls: "text-success bg-success/10 border-success/20" },
+  closed:  { label: "Closed",  cls: "text-destructive bg-destructive/10 border-destructive/20" },
+  unknown: { label: "Unknown", cls: "text-warning bg-warning/10 border-warning/20" },
 };
 
 // ─── EditableField ────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ function EditableField({ label, value, onSave, type = "text", options, multiline
               onClick={save}
               disabled={saving}
               title="Save"
-              className="p-1 rounded text-emerald-500 hover:bg-emerald-500/10 transition-colors disabled:opacity-50 shrink-0 mt-0.5"
+              className="p-1 rounded text-success hover:bg-success/10 transition-colors disabled:opacity-50 shrink-0 mt-0.5"
             >
               {saving
                 ? <Loader2 className="w-3.5 h-3.5 animate-spin" />

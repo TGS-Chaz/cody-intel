@@ -231,9 +231,9 @@ const RULE_TYPE_META: Record<RuleType, { label: string; desc: (r: Partial<AlertR
 };
 
 const SEVERITY_STYLES: Record<Severity, string> = {
-  urgent: "bg-red-500/10 text-red-400 border-red-500/20",
-  warning: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  info: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  urgent: "bg-destructive/10 text-destructive border-destructive/20",
+  warning: "bg-warning/10 text-warning border-warning/20",
+  info: "bg-info/10 text-info border-info/20",
 };
 
 function AlertRulesSection() {
@@ -681,8 +681,8 @@ function ApiKeysSection() {
 
       {/* New key revealed */}
       {newKey && (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-2">
-          <p className="text-xs font-semibold text-emerald-500">
+        <div className="rounded-lg border border-success/30 bg-success/5 p-4 space-y-2">
+          <p className="text-xs font-semibold text-success">
             Key created — copy it now. You won't see it again.
           </p>
           <div className="flex items-center gap-2">
@@ -692,8 +692,8 @@ function ApiKeysSection() {
             <button onClick={() => setShowKey(v => !v)} className="p-2 rounded text-muted-foreground hover:text-foreground transition-colors">
               {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             </button>
-            <button onClick={copyKey} className="p-2 rounded text-muted-foreground hover:text-emerald-500 transition-colors">
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+            <button onClick={copyKey} className="p-2 rounded text-muted-foreground hover:text-success transition-colors">
+              {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
           </div>
           <button onClick={() => setNewKey(null)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
@@ -751,7 +751,7 @@ function ApiKeysSection() {
                   </p>
                   <span className={`text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
                     k.is_active
-                      ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                      ? "bg-success/10 text-success border-success/20"
                       : "bg-muted text-muted-foreground border-border"
                   }`}>
                     {k.is_active ? "active" : "revoked"}

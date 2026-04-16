@@ -95,9 +95,9 @@ function DeltaBadge({ value, inverse = false }: { value: number; inverse?: boole
   const neutral = value === 0;
   if (neutral) return <Minus className="w-3 h-3 text-muted-foreground" />;
   return positive ? (
-    <TrendingUp className="w-3 h-3 text-emerald-500" />
+    <TrendingUp className="w-3 h-3 text-success" />
   ) : (
-    <TrendingDown className="w-3 h-3 text-red-400" />
+    <TrendingDown className="w-3 h-3 text-destructive" />
   );
 }
 
@@ -428,14 +428,14 @@ export function Competitors() {
                       <td className="px-5 py-2 text-foreground text-[13px]">{cat}</td>
                       <td className="px-4 py-2 text-center">
                         {ownStats.categories.has(cat) ? (
-                          <span className="text-emerald-500 font-medium text-[12px]">✓ present</span>
+                          <span className="text-success font-medium text-[12px]">✓ present</span>
                         ) : (
                           <span className="text-muted-foreground/40 text-[12px]">—</span>
                         )}
                       </td>
                       <td className="px-4 py-2 text-center">
                         {compStats.categories.has(cat) ? (
-                          <span className="text-emerald-500 font-medium text-[12px]">✓ present</span>
+                          <span className="text-success font-medium text-[12px]">✓ present</span>
                         ) : (
                           <span className="text-muted-foreground/40 text-[12px]">—</span>
                         )}
@@ -452,23 +452,23 @@ export function Competitors() {
             <div className="rounded-xl border border-border bg-card p-5 space-y-3">
               <h2 className="text-sm font-medium text-foreground">Store Overlap</h2>
               <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 text-center space-y-1">
-                  <div className="text-2xl font-bold text-emerald-500">{fmtN(overlap.ownOnly)}</div>
-                  <div className="text-[10px] font-medium uppercase tracking-wider text-emerald-600/80">
+                <div className="rounded-lg border border-success/30 bg-success/5 p-4 text-center space-y-1">
+                  <div className="text-2xl font-bold text-success">{fmtN(overlap.ownOnly)}</div>
+                  <div className="text-[10px] font-medium uppercase tracking-wider text-success/80">
                     Exclusive to You
                   </div>
                   <div className="text-[11px] text-muted-foreground">stores only you carry</div>
                 </div>
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-center space-y-1">
-                  <div className="text-2xl font-bold text-amber-500">{fmtN(overlap.both)}</div>
-                  <div className="text-[10px] font-medium uppercase tracking-wider text-amber-600/80">
+                <div className="rounded-lg border border-warning/30 bg-warning/5 p-4 text-center space-y-1">
+                  <div className="text-2xl font-bold text-warning">{fmtN(overlap.both)}</div>
+                  <div className="text-[10px] font-medium uppercase tracking-wider text-warning/80">
                     Competitive
                   </div>
                   <div className="text-[11px] text-muted-foreground">both brands present</div>
                 </div>
-                <div className="rounded-lg border border-red-400/30 bg-red-400/5 p-4 text-center space-y-1">
-                  <div className="text-2xl font-bold text-red-400">{fmtN(overlap.compOnly)}</div>
-                  <div className="text-[10px] font-medium uppercase tracking-wider text-red-500/80">
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center space-y-1">
+                  <div className="text-2xl font-bold text-destructive">{fmtN(overlap.compOnly)}</div>
+                  <div className="text-[10px] font-medium uppercase tracking-wider text-destructive/80">
                     Competitor Only
                   </div>
                   <div className="text-[11px] text-muted-foreground">stores you're missing</div>
@@ -565,11 +565,11 @@ function MetricCard({
 function SeverityBadge({ severity }: { severity: string }) {
   const cls =
     severity === "critical"
-      ? "bg-red-500/10 text-red-500"
+      ? "bg-destructive/10 text-destructive"
       : severity === "high"
       ? "bg-orange-500/10 text-orange-500"
       : severity === "medium"
-      ? "bg-amber-500/10 text-amber-500"
+      ? "bg-warning/10 text-warning"
       : "bg-muted text-muted-foreground";
   return (
     <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full shrink-0 ${cls}`}>

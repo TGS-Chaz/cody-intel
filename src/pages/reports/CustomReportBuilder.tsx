@@ -342,7 +342,7 @@ export function CustomReportBuilder() {
                   </button>
                   <button
                     onClick={() => handleDelete(r.id)}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-500 transition-colors"
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>

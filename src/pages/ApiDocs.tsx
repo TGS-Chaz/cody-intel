@@ -132,8 +132,8 @@ function MethodBadge({ method }: { method: "GET" | "POST" }) {
   return (
     <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded font-mono-data ${
       method === "GET"
-        ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
-        : "bg-blue-500/10 text-blue-500 border border-blue-500/20"
+        ? "bg-success/10 text-success border border-success/20"
+        : "bg-info/10 text-info border border-info/20"
     }`}>
       {method}
     </span>
@@ -154,7 +154,7 @@ function CopyButton({ text }: { text: string }) {
       className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
       title="Copy"
     >
-      {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+      {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
   );
 }
@@ -199,7 +199,7 @@ function EndpointCard({ ep }: { ep: Endpoint }) {
                           <td className="px-3 py-2 font-mono-data text-muted-foreground">{p.type}</td>
                           <td className="px-3 py-2">
                             {p.required
-                              ? <span className="text-red-400">required</span>
+                              ? <span className="text-destructive">required</span>
                               : <span className="text-muted-foreground">optional</span>}
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">{p.description}</td>
@@ -317,8 +317,8 @@ export function ApiDocs() {
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">Error Codes</p>
             <div className="space-y-1.5 text-xs text-muted-foreground">
-              <p><span className="font-mono-data text-red-400">401</span> — Missing or invalid API key</p>
-              <p><span className="font-mono-data text-amber-400">429</span> — Rate limit exceeded</p>
+              <p><span className="font-mono-data text-destructive">401</span> — Missing or invalid API key</p>
+              <p><span className="font-mono-data text-warning">429</span> — Rate limit exceeded</p>
               <p><span className="font-mono-data text-muted-foreground">500</span> — Internal server error</p>
             </div>
           </div>
