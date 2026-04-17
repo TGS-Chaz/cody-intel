@@ -5,6 +5,7 @@ import { fetchCensusByZip } from "@/lib/census";
 import { useOrg } from "@/lib/org";
 import { StoreScorecard } from "@/components/StoreScorecard";
 import { PlanGate } from "@/components/PlanGate";
+import StoreBriefPanel from "@/components/StoreBriefPanel";
 import type { IntelStore, DispensaryMenu } from "@/lib/types";
 import {
   ArrowLeft, Package, Calendar, Wifi, Pencil, Check, X, Loader2, Users, DollarSign, MapPin, GraduationCap, RefreshCw,
@@ -301,6 +302,9 @@ export function StoreDetail() {
           </p>
         )}
       </div>
+
+      {/* ── Ambient AI brief ─────────────────────────────────────────────── */}
+      <StoreBriefPanel storeId={store.id} />
 
       {/* ── Editable store info ──────────────────────────────────────────── */}
       <div className="rounded-lg border border-border bg-card shadow-premium overflow-hidden">
