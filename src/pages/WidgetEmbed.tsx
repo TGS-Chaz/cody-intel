@@ -309,7 +309,7 @@ function BrandSearchWidget() {
           type="text"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setSelected(null); }}
-          placeholder="e.g. Painted Rooster, Ceres..."
+          placeholder="e.g. Your brand, Competitor..."
           className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
         />
         {searching && <p className="text-xs text-muted-foreground">Searching...</p>}

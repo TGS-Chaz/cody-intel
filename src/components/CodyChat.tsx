@@ -153,7 +153,7 @@ export default function CodyChat({ isOpen, onClose }: { isOpen: boolean; onClose
                 "Top 10 brands by store count",
                 "Category share breakdown",
                 "Average prices by category",
-                "Which stores carry Desert Valley?",
+                "Which stores carry your top brand?",
               ].map((prompt) => (
                 <button
                   key={prompt}

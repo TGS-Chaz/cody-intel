@@ -43,23 +43,30 @@ type SortDir = "asc" | "desc";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const FARMS = [
-  "Desert Valley Growers",
-  "Painted Rooster Cannabis Co",
-  "Kush Mountain Cannabis",
-];
-
 const PRODUCT_TYPES = [
   "flower", "concentrate", "pre_roll", "vape", "beverage", "edible", "cannagar", "other",
 ];
 
-const FARM_COLORS: Record<string, { text: string; bg: string }> = {
-  "Desert Valley Growers":       { text: "hsl(var(--primary))", bg: "hsl(var(--primary) / 0.07)" },
-  "Painted Rooster Cannabis Co": { text: "hsl(var(--chart-brand-b))", bg: "hsl(var(--chart-brand-b) / 0.07)"  },
-  "Kush Mountain Cannabis":      { text: "hsl(var(--success))", bg: "hsl(var(--success) / 0.07)"  },
-};
-function farmColor(name: string) {
-  return FARM_COLORS[name] ?? { text: "hsl(var(--info))", bg: "hsl(var(--info) / 0.07)" };
+// Deterministic color slot per farm name — first farm seen gets slot 0, etc.
+// Preserves the original TGS ordering (DVG=primary, Painted Rooster=chart-b,
+// Kush Mountain=success) because those are alphabetically 1, 2, 3 of TGS's
+// farms — but any org's farms now color-cycle the same palette.
+const FARM_PALETTE: Array<{ text: string; bg: string }> = [
+  { text: "hsl(var(--primary))", bg: "hsl(var(--primary) / 0.07)" },
+  { text: "hsl(var(--chart-brand-b))", bg: "hsl(var(--chart-brand-b) / 0.07)" },
+  { text: "hsl(var(--success))", bg: "hsl(var(--success) / 0.07)" },
+  { text: "hsl(var(--chart-brand-d))", bg: "hsl(var(--chart-brand-d) / 0.07)" },
+  { text: "hsl(var(--chart-brand-e))", bg: "hsl(var(--chart-brand-e) / 0.07)" },
+  { text: "hsl(var(--info))", bg: "hsl(var(--info) / 0.07)" },
+];
+
+function makeFarmColor(farmOrder: string[]) {
+  const index = new Map<string, number>(farmOrder.map((f, i) => [f, i]));
+  return (name: string) => {
+    const i = index.get(name);
+    if (i == null) return { text: "hsl(var(--info))", bg: "hsl(var(--info) / 0.07)" };
+    return FARM_PALETTE[i % FARM_PALETTE.length];
+  };
 }
 
 function productFarm(p: DbProduct): string {
@@ -193,16 +200,17 @@ function SizeEditor({ sizes, onChange }: { sizes: SizeRow[]; onChange: (s: SizeR
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
 function ProductModal({
-  group, orgId, onClose, onSaved,
+  group, orgId, farms, onClose, onSaved,
 }: {
   group:  ProductGroup | null; // null = new
   orgId:  string;
+  farms:  string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const isNew = !group;
   const [name,        setName]        = useState(group?.name ?? "");
-  const [farm,        setFarm]        = useState(group?.farm ?? FARMS[0]);
+  const [farm,        setFarm]        = useState(group?.farm ?? farms[0] ?? "");
   const [type,        setType]        = useState(group?.type ?? "");
   const [strain,      setStrain]      = useState(group?.strain ?? "");
   const [description, setDescription] = useState(group?.description ?? "");
@@ -326,13 +334,23 @@ function ProductModal({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Farm</label>
-              <select
-                value={farm}
-                onChange={e => setFarm(e.target.value)}
-                className="w-full h-10 text-sm rounded-md bg-secondary border border-border text-foreground px-3"
-              >
-                {FARMS.map(f => <option key={f} value={f}>{f}</option>)}
-              </select>
+              {farms.length > 0 ? (
+                <select
+                  value={farm}
+                  onChange={e => setFarm(e.target.value)}
+                  className="w-full h-10 text-sm rounded-md bg-secondary border border-border text-foreground px-3"
+                >
+                  {!farms.includes(farm) && farm && <option value={farm}>{farm}</option>}
+                  {farms.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              ) : (
+                <input
+                  value={farm}
+                  onChange={e => setFarm(e.target.value)}
+                  placeholder="Your brand"
+                  className="w-full h-10 text-sm bg-secondary border border-border rounded-md px-3"
+                />
+              )}
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Type</label>
@@ -505,6 +523,13 @@ export function MyProducts() {
     for (const g of sortedGroups) (acc[g.farm] ??= []).push(g);
     return acc;
   }, [sortedGroups]);
+
+  // Deterministic farm → palette index map for this org's farms.
+  const orgFarms = useMemo(() =>
+    [...new Set(products.map(p => (p.farm ?? "").trim()).filter(Boolean))].sort(),
+    [products],
+  );
+  const farmColor = useMemo(() => makeFarmColor(orgFarms), [orgFarms]);
 
   function toggleSort(k: SortKey) {
     setSort(prev => {
@@ -852,6 +877,7 @@ export function MyProducts() {
           <ProductModal
             group={editGroup ?? null}
             orgId={orgId}
+            farms={orgFarms}
             onClose={() => setEditGroup(undefined)}
             onSaved={() => { setEditGroup(undefined); load(); }}
           />

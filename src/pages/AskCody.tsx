@@ -18,7 +18,7 @@ const SUGGESTED = [
     color: "hsl(var(--info))",
     prompts: [
       "What brands are trending statewide right now?",
-      "Give me a competitive briefing for the Yakima market",
+      "Give me a competitive briefing for my home market",
       "Which categories are growing fastest in Seattle?",
       "What's the average price trend for flower this month?",
     ],
@@ -28,10 +28,10 @@ const SUGGESTED = [
     icon: Target,
     color: "hsl(var(--chart-brand-c))",
     prompts: [
-      "Which stores carry Phat Panda but not our brands?",
-      "Where are the biggest distribution gaps for Desert Valley?",
-      "Which stores in Spokane should we target for expansion?",
-      "Find stores carrying competitors but not Painted Rooster",
+      "Which stores carry competitors but not my brands?",
+      "Where are the biggest distribution gaps for my top brand?",
+      "Which stores in Spokane should I target for expansion?",
+      "Find stores carrying competitors but not my brands",
     ],
   },
   {
@@ -39,10 +39,10 @@ const SUGGESTED = [
     icon: Package,
     color: "hsl(var(--success))",
     prompts: [
-      "Suggest a restock order for Fire Cannabis in Yakima",
-      "What should we pitch to a store in Seattle?",
-      "Which of our products are most likely stocked out right now?",
-      "What's selling best across our brand portfolio?",
+      "Suggest a restock order for a top account",
+      "What should I pitch to a store in Seattle?",
+      "Which of my products are most likely stocked out right now?",
+      "What's selling best across my brand portfolio?",
     ],
   },
   {
@@ -50,10 +50,10 @@ const SUGGESTED = [
     icon: Zap,
     color: "hsl(var(--chart-brand-b))",
     prompts: [
-      "How is Phat Panda performing vs our brands?",
+      "How are my brands performing vs the category leaders?",
       "Which competitor dropped prices recently?",
       "What new brands are entering the Spokane market?",
-      "Where are we losing shelf space to competitors?",
+      "Where am I losing shelf space to competitors?",
     ],
   },
 ];
@@ -263,9 +263,9 @@ export function AskCody() {
           <div className="px-6 pb-3 flex flex-wrap gap-1.5 shrink-0">
             {[
               "What brands are trending statewide right now?",
-              "Which stores carry Phat Panda but not our brands?",
-              "Suggest a restock order for Fire Cannabis in Yakima",
-              "Give me a competitive briefing for the Yakima market",
+              "Which stores carry competitors but not my brands?",
+              "Suggest a restock order for a top account",
+              "Give me a competitive briefing for my home market",
             ].map((p) => (
               <button
                 key={p}
