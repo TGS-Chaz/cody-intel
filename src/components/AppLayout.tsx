@@ -33,6 +33,7 @@ import codyIcon from "@/assets/cody-icon.svg";
 import CodyGlow from "@/components/CodyGlow";
 import UserAvatar from "@/components/UserAvatar";
 import { OnboardingTour } from "@/components/OnboardingTour";
+import { ProductSwitcher, CODY_PRODUCTS } from "cody-shared";
 
 const navItems = [
   { to: "/",          icon: LayoutDashboard, label: "Dashboard",  end: true },
@@ -127,7 +128,7 @@ export default function AppLayout() {
           <CodyGlow intensity="medium" size="md">
             <img src={codyIcon} alt="" className="h-6 w-auto shrink-0" style={{ filter: "brightness(3) saturate(0.1)" }} />
           </CodyGlow>
-          <div className="flex items-baseline" style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1 }}>
+          <div className="flex items-baseline flex-1" style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1 }}>
             <span style={{ color: "hsl(var(--primary))" }}>c</span>
             <span className="text-foreground">ody</span>
             <span
@@ -136,6 +137,9 @@ export default function AppLayout() {
             >
               intel
             </span>
+          </div>
+          <div className="text-muted-foreground">
+            <ProductSwitcher currentProduct="intel" products={CODY_PRODUCTS} />
           </div>
         </div>
 
