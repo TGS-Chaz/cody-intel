@@ -210,6 +210,22 @@ export function StoreDetail() {
     load();
   }, [id]);
 
+  const [itemsTotal, setItemsTotal] = useState(0);
+  const [itemsLimit, setItemsLimit] = useState(50);
+  useEffect(() => {
+    if (!selectedMenu) return;
+    // Reset paging when the menu changes, then fetch count + page.
+    setItemsLimit(50);
+    setItems([]);
+    (async () => {
+      const countRes = await supabase
+        .from("menu_items")
+        .select("id", { count: "exact", head: true })
+        .eq("dispensary_menu_id", selectedMenu)
+        .eq("is_on_menu", true);
+      setItemsTotal(countRes.count ?? 0);
+    })();
+  }, [selectedMenu]);
   useEffect(() => {
     if (!selectedMenu) return;
     supabase
@@ -218,9 +234,9 @@ export function StoreDetail() {
       .eq("dispensary_menu_id", selectedMenu)
       .eq("is_on_menu", true)
       .order("raw_category")
-      .limit(200)
+      .limit(itemsLimit)
       .then(({ data }) => setItems(data ?? []));
-  }, [selectedMenu]);
+  }, [selectedMenu, itemsLimit]);
 
   // ── Field save handler ──────────────────────────────────────────────────────
   async function updateField(field: keyof IntelStore, val: string | null) {
@@ -524,7 +540,7 @@ export function StoreDetail() {
           >
             <Package className="w-3.5 h-3.5 text-muted-foreground" />
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-              {items.length} Products (showing first 200)
+              Showing {items.length} of {itemsTotal} products
             </span>
           </div>
           <table className="w-full text-xs">
@@ -555,6 +571,17 @@ export function StoreDetail() {
               ))}
             </tbody>
           </table>
+          {items.length < itemsTotal && (
+            <div className="px-4 py-3 border-t border-border flex items-center justify-center">
+              <button
+                type="button"
+                onClick={() => setItemsLimit(n => n + 50)}
+                className="text-[11px] font-medium text-primary hover:text-primary/80"
+              >
+                Load 50 more ({itemsTotal - items.length} remaining)
+              </button>
+            </div>
+          )}
         </div>
       )}
 

@@ -83,12 +83,12 @@ export function SaturationAnalysis() {
 
     if (!stores?.length) { setLoading(false); return; }
 
-    // 2. Fetch recent snapshots (most recent per store, limit 500)
+    // 2. Latest snapshot PER store (not top-N globally). RPC uses
+    //    `SELECT DISTINCT ON (intel_store_id) ... ORDER BY intel_store_id,
+    //    snapshot_date DESC` so every store with any snapshot gets its most
+    //    recent one.
     const { data: snapshots } = await supabase
-      .from("menu_snapshots")
-      .select("intel_store_id, snapshot_date, product_data")
-      .order("snapshot_date", { ascending: false })
-      .limit(500) as { data: SnapshotRow[] | null };
+      .rpc("get_latest_menu_snapshots_per_store") as { data: SnapshotRow[] | null };
 
     // 3. Own brands
     let ownBrandSet = new Set<string>();

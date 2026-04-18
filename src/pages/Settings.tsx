@@ -9,7 +9,7 @@ import { ScrapeSchedule } from "@/components/ScrapeSchedule";
 
 // ── Brands Section ────────────────────────────────────────────────────────────
 
-interface UserBrand { id: string; brand_name: string; is_own_brand: boolean; }
+interface UserBrand { id: string; brand_name: string; is_own_brand: boolean; is_competitor_brand: boolean; }
 interface MarketBrandSuggestion { id: string; name: string; }
 
 function BrandsSection() {
@@ -29,7 +29,7 @@ function BrandsSection() {
     if (!orgId) return;
     const { data } = await supabase
       .from("user_brands")
-      .select("id, brand_name, is_own_brand")
+      .select("id, brand_name, is_own_brand, is_competitor_brand")
       .eq("org_id", orgId)
       .order("brand_name");
     setBrands(data ?? []);
@@ -74,14 +74,31 @@ function BrandsSection() {
     setCompOpen(true);
   }
 
-  async function addBrand(brandName: string, isOwn: boolean) {
+  async function addBrand(brandName: string, role: "own" | "competitor") {
     if (!orgId || !brandName.trim()) return;
-    await supabase.from("user_brands").insert({
-      org_id: orgId,
-      brand_name: brandName.trim(),
-      is_own_brand: isOwn,
-    });
-    if (isOwn) { setOwnInput(""); setOwnOpen(false); }
+    const name = brandName.trim();
+    // Check for existing row with same brand name in this org.
+    const { data: existing } = await supabase
+      .from("user_brands")
+      .select("id, is_own_brand, is_competitor_brand")
+      .eq("org_id", orgId)
+      .ilike("brand_name", name)
+      .maybeSingle();
+    if (existing) {
+      // Role-adjust rather than duplicate.
+      await supabase.from("user_brands").update({
+        is_own_brand: role === "own",
+        is_competitor_brand: role === "competitor",
+      }).eq("id", existing.id);
+    } else {
+      await supabase.from("user_brands").insert({
+        org_id: orgId,
+        brand_name: name,
+        is_own_brand: role === "own",
+        is_competitor_brand: role === "competitor",
+      });
+    }
+    if (role === "own") { setOwnInput(""); setOwnOpen(false); }
     else { setCompInput(""); setCompOpen(false); }
     await loadBrands();
   }
@@ -92,7 +109,7 @@ function BrandsSection() {
   }
 
   const ownList  = brands.filter(b => b.is_own_brand);
-  const compList = brands.filter(b => !b.is_own_brand);
+  const compList = brands.filter(b => b.is_competitor_brand);
 
   return (
     <div className="rounded-lg border border-border bg-card p-5 shadow-premium space-y-4">
@@ -128,7 +145,7 @@ function BrandsSection() {
               <input
                 value={ownInput}
                 onChange={e => handleOwnInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && ownInput.trim()) addBrand(ownInput, true); }}
+                onKeyDown={e => { if (e.key === "Enter" && ownInput.trim()) addBrand(ownInput, "own"); }}
                 placeholder="Type brand name and press Enter…"
                 className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
               />
@@ -137,7 +154,7 @@ function BrandsSection() {
                   {ownSuggestions.map(r => (
                     <button
                       key={r.id}
-                      onClick={() => addBrand(r.name, true)}
+                      onClick={() => addBrand(r.name, "own")}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors text-left"
                     >
                       <Plus className="w-3.5 h-3.5 text-primary shrink-0" />
@@ -168,7 +185,7 @@ function BrandsSection() {
               <input
                 value={compInput}
                 onChange={e => handleCompInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && compInput.trim()) addBrand(compInput, false); }}
+                onKeyDown={e => { if (e.key === "Enter" && compInput.trim()) addBrand(compInput, "competitor"); }}
                 placeholder="Type brand name and press Enter…"
                 className="w-full pl-8 pr-3 py-1.5 rounded-md border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-warning/30 focus:border-warning"
               />
@@ -177,7 +194,7 @@ function BrandsSection() {
                   {compSuggestions.map(r => (
                     <button
                       key={r.id}
-                      onClick={() => addBrand(r.name, false)}
+                      onClick={() => addBrand(r.name, "competitor")}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors text-left"
                     >
                       <Plus className="w-3.5 h-3.5 text-warning shrink-0" />

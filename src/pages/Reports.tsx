@@ -326,18 +326,21 @@ function CoverageReport() {
   const [platforms, setPlatforms]   = useState<PlatformStat[]>([]);
   const [cities, setCities]         = useState<CityRow[]>([]);
   const [storesWithData, setWithData] = useState(0);
+  const [totalStoresLive, setTotalStoresLive] = useState<number | null>(null);
   const [loading, setLoading]       = useState(true);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const [storeRes, menusRes, intelRes] = await Promise.all([
+      const [storeRes, menusRes, intelRes, totalRes] = await Promise.all([
         supabase.from("intel_stores").select("id", { count: "exact", head: true }).gt("total_products", 0),
         supabase.from("dispensary_menus").select("source, intel_store_id, menu_item_count").not("intel_store_id", "is", null),
         supabase.from("intel_stores").select("id, city, total_products").eq("status", "active"),
+        supabase.from("intel_stores").select("id", { count: "exact", head: true }).eq("status", "active"),
       ]);
 
       setWithData(storeRes.count ?? 0);
+      setTotalStoresLive(totalRes.count ?? 0);
 
       const platformAgg: Record<string, { stores: Set<string>; products: number }> = {};
       for (const m of menusRes.data ?? []) {
@@ -373,8 +376,9 @@ function CoverageReport() {
 
   if (loading) return <Skeleton rows={8} />;
 
-  const totalStores = 458;
-  const coveragePct = Math.round((storesWithData / totalStores) * 100);
+  // Dynamic count — falls back to 458 only if the count query failed.
+  const totalStores = totalStoresLive ?? 458;
+  const coveragePct = totalStores > 0 ? Math.round((storesWithData / totalStores) * 100) : 0;
 
   return (
     <div className="space-y-5">
@@ -494,6 +498,9 @@ function PriceReport() {
   const [selectedStore, setSelectedStore] = useState<PriceStore | null>(null);
   const [storeItems, setStoreItems]       = useState<StoreMenuItem[]>([]);
   const [storeLoading, setStoreLoading]   = useState(false);
+  const [ownItemLimit, setOwnItemLimit]   = useState(50);
+  const [compItemLimit, setCompItemLimit] = useState(50);
+  useEffect(() => { setOwnItemLimit(50); setCompItemLimit(50); }, [selectedStore?.id]);
 
   useEffect(() => {
     async function load() {
@@ -902,6 +909,7 @@ function PriceReport() {
                       {ownStoreItems.length === 0 ? (
                         <p className="px-3 py-4 text-xs text-muted-foreground">None found on this menu.</p>
                       ) : (
+                        <>
                         <div className="max-h-72 overflow-y-auto">
                           <table className="w-full text-xs">
                             <thead className="sticky top-0 bg-card">
@@ -912,7 +920,7 @@ function PriceReport() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-border/30">
-                              {ownStoreItems.slice(0, 100).map((item, i) => (
+                              {ownStoreItems.slice(0, ownItemLimit).map((item, i) => (
                                 <tr key={i} className="hover:bg-primary/5 transition-colors">
                                   <td className="px-3 py-1.5 text-foreground font-medium truncate max-w-[140px]">{item.raw_name ?? "—"}</td>
                                   <td className="px-3 py-1.5 text-muted-foreground">{item.raw_category ?? "—"}</td>
@@ -922,6 +930,16 @@ function PriceReport() {
                             </tbody>
                           </table>
                         </div>
+                        {ownItemLimit < ownStoreItems.length && (
+                          <button
+                            type="button"
+                            onClick={() => setOwnItemLimit(n => n + 50)}
+                            className="w-full text-[10px] font-medium text-primary hover:text-primary/80 py-1.5 border-t border-primary/20"
+                          >
+                            Load 50 more ({ownStoreItems.length - ownItemLimit} remaining)
+                          </button>
+                        )}
+                        </>
                       )}
                     </div>
 
@@ -934,6 +952,7 @@ function PriceReport() {
                       {compStoreItems.length === 0 ? (
                         <p className="px-3 py-4 text-xs text-muted-foreground">None found on this menu.</p>
                       ) : (
+                        <>
                         <div className="max-h-72 overflow-y-auto">
                           <table className="w-full text-xs">
                             <thead className="sticky top-0 bg-card">
@@ -944,7 +963,7 @@ function PriceReport() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-border/30">
-                              {compStoreItems.slice(0, 100).map((item, i) => (
+                              {compStoreItems.slice(0, compItemLimit).map((item, i) => (
                                 <tr key={i} className="hover:bg-accent/30 transition-colors">
                                   <td className="px-3 py-1.5 text-foreground font-medium truncate max-w-[140px]">{item.raw_name ?? "—"}</td>
                                   <td className="px-3 py-1.5 text-muted-foreground">{item.raw_category ?? "—"}</td>
@@ -954,6 +973,16 @@ function PriceReport() {
                             </tbody>
                           </table>
                         </div>
+                        {compItemLimit < compStoreItems.length && (
+                          <button
+                            type="button"
+                            onClick={() => setCompItemLimit(n => n + 50)}
+                            className="w-full text-[10px] font-medium text-foreground/70 hover:text-foreground py-1.5 border-t border-border"
+                          >
+                            Load 50 more ({compStoreItems.length - compItemLimit} remaining)
+                          </button>
+                        )}
+                        </>
                       )}
                     </div>
                   </div>
