@@ -180,3 +180,62 @@ If pilot accuracy is <80%, iterate before spending several hours on a full run t
 ---
 
 **Stopping here per Part 2 instructions. Do not proceed to Part 3 until this is reviewed.**
+
+---
+
+## Addendum — VPS audit findings (Part 3 kickoff, 2026-04-19)
+
+SSH'd into the VPS and reviewed `/opt/cody-scraper/` before starting the Part 3 build. **The existing infrastructure is materially better than the 94%-empty history led me to believe.** Below is what I found, followed by a revised recommendation.
+
+### VPS inventory
+
+- **Framework:** `puppeteer-core@^23.0.0` with `puppeteer-extra@^3.3.6` + `puppeteer-extra-plugin-stealth@^2.11.2`. A stealth plugin is already installed and active.
+- **Container:** Docker, `unless-stopped`, 1 GiB memory limit, port 3050. Live stats: **393.8 MiB / 1 GiB used, up 3 days, 0.16% CPU.** Plenty of headroom.
+- **Host:** 15 GB RAM, 9.4 GB free, load 0.00.
+- **`server.js`:** 3028 lines.
+- **Dependencies beyond Puppeteer:** `express@^4.21.0`, `https-proxy-agent@^7.0.0`. No Playwright.
+
+### `detectPlatformOnce()` quality (server.js:2830-2985)
+
+The current detection routine does all of the things I flagged as missing in 2a:
+
+- Real headless Chromium with JS execution (not HTTP-only)
+- Age-gate click-through
+- Multi-signal scan: iframe `src` + script `src` + inline-script content
+- Per-platform embed vs widget regex separation (with false-positive guards — e.g. "leafly" the marketing link vs a Leafly embed)
+- Subpath probing (`/menu`, `/shop`, `/order`, `/browse`) when root has no embed
+- Subdomain probing (`menu.host`, `shop.host`)
+- POSaBit widget extraction via `page.evaluate(() => window.posabitmenuwidget)`
+
+The `/detect-platform-batch` endpoint at line 2985 wraps this and returns the shape the Edge Function already expects.
+
+### What the logs reveal about current failure mode
+
+Recent Docker logs show active POSaBit DOM extraction work hitting two specific failures:
+
+1. **"Attempted to use detached Frame"** — frame lifecycle race. Widget iframe loads, scanner tries to `evaluate()` inside it, parent page navigates or the iframe gets recreated → evaluation throws. This is a fixable bug in the iframe-context helper.
+2. **401 responses from `app.posabit.com/mcx/...` endpoints** — the extraction pulls the four credentials and immediately hits the MCX API to confirm; sometimes the returned `merchant_token` is expired or the venue is misconfigured. This is downstream of detection — detection itself succeeded.
+
+Neither of these explains the 94% empty rate in the one platform-scan-batch run on 2026-04-15/16. That run predates the current `detectPlatformOnce()` enhancements — the subpath probing and looser domain matching went in at commit `122f971` ("Platform scan: subpath probing + looser domain matches; new platform-scan-batch orchestrator"), which is in this repo's recent history. **The 94%-empty dataset is stale. It does not reflect what the VPS would return today.**
+
+### Revised recommendation: enhance-in-place, not rebuild
+
+Given what the VPS actually does now, the right build for Part 3 is:
+
+1. **Keep the VPS endpoint.** `detectPlatformOnce()` already implements the "Pass 2" I described in 2d.
+2. **Add a new Pass 1 Edge Function** (`verify-platform-pass1`) that does HTTP-only regex scanning for Jane, Dutchie, Leafly — no browser. Same patterns as in 2d. Stores are checked by Pass 1 first; only Pass-1-misses plus POSaBit candidates get sent to the VPS.
+3. **Add a Pass 2 Edge Function** (`verify-platform-pass2`) that wraps `/detect-platform-batch` with the verification-specific table schema (`platform_verification`) instead of the old `intel_store_platform_scan`.
+4. **Credential extraction is already in place** on `/posabit-discover` — we just need to call it for POSaBit hits from Pass 2.
+
+This collapses my earlier "build both" into "build Pass 1 in the Edge; Pass 2 reuses what's already on the VPS." Estimated delivery: Pass 1 ~2h, Pass 2 wrapper ~1h, `platform_verification` table + pilot runner ~1h.
+
+### Answer to 2d's framework question
+
+**Puppeteer, enhance-in-place.** Playwright rebuild is off the table for now — the existing Puppeteer setup has stealth, works against age-gates, and handles the multi-signal scan. Swapping frameworks would be net-negative: several days of porting for no demonstrated accuracy win. Revisit only if pilot shows sub-70% accuracy with the enhanced pipeline.
+
+### Known bugs to fix during pilot
+
+- **Detached-frame race** in POSaBit iframe extraction — wrap `frame.evaluate()` in a try/catch that retries once after `page.waitForTimeout(500)`. Low-risk patch.
+- **MCX 401 handling** — if credential extraction returns 401, flag `needs_credential_extraction = true` on `platform_verification` and keep the detection result. Don't throw out a valid POSaBit detection because the cred-verify round-trip failed.
+
+Both are quick fixes, neither blocks the pilot.
