@@ -24,6 +24,8 @@ import { ApiDocs } from "@/pages/ApiDocs";
 import { Territory } from "@/pages/Territory";
 import { Pricing } from "@/pages/Pricing";
 import { IndustryPulse } from "@/pages/IndustryPulse";
+import { Stage3Review } from "@/pages/Stage3Review";
+import { Stage3ReviewApply } from "@/pages/Stage3ReviewApply";
 
 function ProtectedRoutes() {
   const { session, loading } = useAuth();
@@ -62,6 +64,8 @@ function ProtectedRoutes() {
             <Route path="briefing" element={<WeeklyBriefing />} />
             <Route path="industry-pulse" element={<IndustryPulse />} />
             <Route path="api-docs" element={<ApiDocs />} />
+            <Route path="admin/stage-3-review" element={<Stage3Review />} />
+            <Route path="admin/stage-3-review/apply" element={<Stage3ReviewApply />} />
           </Route>
         </Routes>
       </ThemeProvider>
