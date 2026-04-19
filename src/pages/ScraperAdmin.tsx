@@ -16,7 +16,8 @@ interface Platform {
   description: string;
   functionName: string;
   batchSize: number;
-  blocked?: string;
+  blocked?: boolean | string;
+  deprecated?: boolean;
 }
 
 const PLATFORMS: Platform[] = [
@@ -52,9 +53,11 @@ const PLATFORMS: Platform[] = [
     label: "Weedmaps",
     source: "weedmaps",
     color: "hsl(var(--platform-weedmaps))",
-    description: "Discovers WA dispensaries via Weedmaps directory, matches to LCB stores, fetches complete menus",
+    description: "Deprecated — Weedmaps scraping is temporarily disabled while we evaluate alternative data sources. Historical data preserved.",
     functionName: "scrape-weedmaps",
     batchSize: 5,
+    blocked: true,
+    deprecated: true,
   },
   {
     id: "jane",
@@ -418,9 +421,14 @@ function PlatformCard({
       )}
       {logEntries.length > 0 && <ScrapeLog entries={logEntries} />}
       <div className="mt-auto flex gap-2">
-        {platform.blocked ? (
+        {platform.deprecated ? (
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 italic">
-            <AlertTriangle className="w-3.5 h-3.5 text-warning" />{platform.blocked}
+            <AlertTriangle className="w-3.5 h-3.5 text-warning" />
+            Inactive — {platform.description}
+          </div>
+        ) : platform.blocked ? (
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 italic">
+            <AlertTriangle className="w-3.5 h-3.5 text-warning" />{typeof platform.blocked === "string" ? platform.blocked : "Disabled"}
           </div>
         ) : isRunning ? (
           <button onClick={onStop} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors">
