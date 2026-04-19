@@ -282,6 +282,7 @@ function BulkActions({ items, onChange }: { items: QueueItem[]; onChange: () => 
       <div className="text-xs font-medium text-muted-foreground mb-2">Bulk actions</div>
       <div className="flex flex-wrap gap-2">
         <button
+          type="button"
           onClick={bulkAcceptCat2Remaining}
           disabled={!bulkAcceptEligible || saving !== null}
           className="text-xs px-3 py-1.5 rounded-md border border-border bg-card hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
@@ -291,6 +292,7 @@ function BulkActions({ items, onChange }: { items: QueueItem[]; onChange: () => 
           Accept all remaining Cat 2 ({cat2Done}/{cat2Total} sample confirmed)
         </button>
         <button
+          type="button"
           onClick={bulkSeNotOperating}
           disabled={seAll.length === 0 || saving !== null || seDecided === seAll.length}
           className="text-xs px-3 py-1.5 rounded-md border border-border bg-card hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
@@ -316,29 +318,48 @@ function ReviewCard({ item, onSaved, userEmail }: { item: QueueItem; onSaved: ()
   const candidates = item.candidate_websites ?? [];
   const v2 = item.v2;
 
+  // If Chaz clicks Save+next without having picked an explicit decision,
+  // infer one: items with a website default to "confirmed_as_is"; items
+  // without a website default to "no_website". Chaz can always override by
+  // clicking an explicit decision button first.
+  const effectiveDecision: Decision | null =
+    decision ?? (v2.website ? "confirmed_as_is" : "no_website");
+
   async function save() {
+    const d = effectiveDecision;
+    // eslint-disable-next-line no-console
+    console.log("[Stage3] Save+next clicked", { itemId: item.id, v2Id: item.intel_store_v2_id, decision: d, websitePicked: pickedUrl, customUrl, useCustom });
+    if (!d) { setMsg("Pick a decision first."); return; }
     setSaving(true);
     setMsg(null);
     const websiteValue =
-      decision === "changed_website"
+      d === "changed_website"
         ? (useCustom ? customUrl.trim() : pickedUrl.trim())
         : null;
-    if (decision === "changed_website" && !websiteValue) {
+    if (d === "changed_website" && !websiteValue) {
       setMsg("Pick a candidate or enter a custom URL.");
       setSaving(false);
       return;
     }
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("stage_3_review_queue")
       .update({
-        decision,
+        decision: d,
         decision_website: websiteValue,
         decision_notes: notes || null,
         decided_at: new Date().toISOString(),
         decided_by: userEmail,
       })
-      .eq("id", item.id);
+      .eq("id", item.id)
+      .select("id");
+    // eslint-disable-next-line no-console
+    console.log("[Stage3] Save response", { error, rowsReturned: data?.length ?? 0 });
     if (error) { setMsg(`Failed: ${error.message}`); setSaving(false); return; }
+    if (!data || data.length === 0) {
+      setMsg("Save returned 0 rows (likely RLS: only chaz@greensolutionlab.com can update). Refresh and check your session.");
+      setSaving(false);
+      return;
+    }
     setMsg("Saved.");
     setSaving(false);
     setTimeout(() => onSaved(), 300);
@@ -432,6 +453,7 @@ function ReviewCard({ item, onSaved, userEmail }: { item: QueueItem; onSaved: ()
 
       <div className="flex flex-wrap gap-2 mb-3">
         <button
+          type="button"
           onClick={() => { setDecision("confirmed_as_is"); setUseCustom(false); setPickedUrl(""); }}
           disabled={!v2.website}
           className={`text-xs px-3 py-1.5 rounded-md ${decision === "confirmed_as_is" ? "bg-primary text-primary-foreground" : "border border-border bg-card hover:bg-accent"} disabled:opacity-40 disabled:cursor-not-allowed`}
@@ -439,24 +461,28 @@ function ReviewCard({ item, onSaved, userEmail }: { item: QueueItem; onSaved: ()
           Confirm as-is
         </button>
         <button
+          type="button"
           onClick={() => { setDecision("changed_website"); setUseCustom(true); }}
           className={`text-xs px-3 py-1.5 rounded-md ${decision === "changed_website" && useCustom ? "bg-primary text-primary-foreground" : "border border-border bg-card hover:bg-accent"}`}
         >
           Enter custom URL
         </button>
         <button
+          type="button"
           onClick={() => { setDecision("no_website"); setUseCustom(false); setPickedUrl(""); }}
           className={`text-xs px-3 py-1.5 rounded-md ${decision === "no_website" ? "bg-primary text-primary-foreground" : "border border-border bg-card hover:bg-accent"}`}
         >
           No website
         </button>
         <button
+          type="button"
           onClick={() => { setDecision("not_operating"); setUseCustom(false); setPickedUrl(""); }}
           className={`text-xs px-3 py-1.5 rounded-md ${decision === "not_operating" ? "bg-primary text-primary-foreground" : "border border-border bg-card hover:bg-accent"}`}
         >
           Not operating
         </button>
         <button
+          type="button"
           onClick={() => { setDecision("flagged_research"); }}
           className={`text-xs px-3 py-1.5 rounded-md ${decision === "flagged_research" ? "bg-primary text-primary-foreground" : "border border-border bg-card hover:bg-accent"}`}
         >
@@ -482,13 +508,22 @@ function ReviewCard({ item, onSaved, userEmail }: { item: QueueItem; onSaved: ()
         className="w-full text-xs px-2.5 py-1.5 border border-border rounded-md bg-card mb-3"
       />
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div className="text-[10px] text-muted-foreground">
-          {msg || (item.decided_at ? `Decided ${new Date(item.decided_at).toLocaleString()} by ${item.decided_by || "?"}` : "Not yet decided")}
+          {msg
+            ? msg
+            : item.decided_at
+              ? `Decided ${new Date(item.decided_at).toLocaleString()} by ${item.decided_by || "?"}`
+              : decision
+                ? `Will save as: ${decision.replace(/_/g, " ")}`
+                : effectiveDecision
+                  ? `Will default to: ${effectiveDecision.replace(/_/g, " ")} (click a button above to change)`
+                  : "No decision picked yet"}
         </div>
         <button
+          type="button"
           onClick={save}
-          disabled={!decision || saving}
+          disabled={saving || !effectiveDecision}
           className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
         >
           {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
