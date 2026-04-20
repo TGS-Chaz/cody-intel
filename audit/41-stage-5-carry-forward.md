@@ -85,9 +85,16 @@ All 19 v2 joint stores got their bizId populated from `platform_verification.sig
 | 6117 | DANK'S TACOMA | TACOMA | audit/32 |
 | 6166 | CANNA4LIFE | CLARKSTON | audit/32 |
 
-**New bizId 6114** confirmed single-store: `MOUNT VERNON RETAIL HOLDINGS LLC` in Mount Vernon. This is a new-to-us Joint store surfaced by Stage 3's manual website input. Worth a spot-check before enabling Joint scraping against it — does the Mount Vernon site actually serve Joint products, or is it another chain alias sharing the bizId?
+**New bizId 6114** confirmed — `MOUNT VERNON RETAIL HOLDINGS LLC` is the LCB legal entity; the store **operates as Floyd's Cannabis Mount Vernon** (website `https://www.floyds-cannabis.com/stores/floyds-cannabis-dispensary-mount-vernon-wa/`). Same legal-name-vs-DBA pattern as **DTC HOLDINGS = Floyd's Port Angeles** (audit/32). Data is correct. Worth a future `dba_name` column but not urgent — website routes scrapers correctly regardless.
 
-Also flagging **CRAFT LEAVENWORTH (DRYDEN)** — it's geographically Dryden, WA (LCB-registered at that address) but shares bizId 4353 with the two CRAFT Vancouver locations. This means the Joint backend treats CRAFT Leavenworth's catalog as the same as CRAFT Vancouver's. Scraping would pull identical products. Flag for review — might be correct (CRAFT shares inventory across locations) or might be a Stage 3 website mistake (Chaz gave the Vancouver URL instead of the Leavenworth URL).
+**CRAFT Vancouver Mill Plain + Andresen** — two LCB licenses (413732, 431536) share `joint_business_id=4353`. Known LCB-duplicate pattern per audit/32: **same physical business, two LCB licenses**. Mill Plain's widget serves both rows. Scraping nightly against bizId 4353 once populates both menu_items sets. Leave as-is.
+
+**CRAFT LEAVENWORTH (DRYDEN, LCB 085059) — HARD-DEACTIVATED 2026-04-19.** Initial flag (shares bizId 4353 with CRAFT Vancouver) resolved: Chaz confirmed this store is only open a few days/month and isn't worth the scrape pipeline overhead. The Stage 3 website `https://www.craftcannabis.com/locations/?utm_source=gmb&utm_medium=organic` is a generic CRAFT `/locations` page that served the Mill Plain Joint widget (bizId 4353 false-positive). Migration `20260419190000_phase_1j_stage_5_deactivate_leavenworth.sql` set `is_active=FALSE`, cleared website/joint_business_id/designated_scraper/primary_platform fields, and recorded `deactivated_reason` + `deactivated_at`. Mapping row preserved.
+
+Migration `20260419180000_phase_1j_stage_5_is_active.sql` added three general-purpose columns to intel_stores_v2 for future low-activity / out-of-scope cases:
+- `is_active BOOLEAN NOT NULL DEFAULT TRUE`
+- `deactivated_reason TEXT`
+- `deactivated_at TIMESTAMPTZ`
 
 ## Section 5 — Carry-forward results
 
@@ -164,9 +171,27 @@ Stage 4 Section 3 flagged 17 stores where Phase 1h found a platform but Stage 4 
 
 63 POSaBit-detected stores need credential extraction before the POSaBit scraper will work post-swap. Of those, 31 already have credentials from the v1 carry-forward (they may or may not still be valid). The 32 net-new ones are Stage 4 fresh detections. Strategy: batched `/posabit-discover` re-run with `waitMs=40000` against all 63 and reconcile with v1 carry-forward credentials. Separate Stage 5b sub-task.
 
-### 7f. CRAFT LEAVENWORTH bizId 4353 assignment
+### 7f. CRAFT LEAVENWORTH — RESOLVED (hard-deactivated)
 
-Flagged in Section 4. Chaz should visit `https://craftcannabis.com/locations/leavenworth` (or whatever site Stage 3 supplied) and confirm it really serves Joint products vs being a marketing page that happens to embed the Vancouver store's Joint widget.
+Initially flagged as needing manual review. Chaz confirmed 2026-04-19: open only a few days/month; not worth scraping. Hard-deactivated via migration `20260419190000`. Row stays in `intel_stores_v2` with `is_active=FALSE` so it can be revived if schedule changes. See Section 4 for migration detail.
+
+### 7g. is_active filter requirement for Stage 6 scraper re-enablement
+
+The new `is_active` column must be honored by every scraper / cron / dashboard query that iterates `intel_stores_v2` (and post-swap, `intel_stores`). Before re-enabling the disabled scrapers in Stage 6:
+
+- `scrape-dutchie` / `scrape-jane` / `scrape-leafly` / `scrape-posabit` / `scrape-joint` edge functions: add `.eq("is_active", true)` to their target-loading queries.
+- Dashboard KPIs (`Stores directory`, coverage reports, store-count widgets): filter `is_active = true` or explicitly show inactive.
+- Any pg_cron wrappers that read `designated_scraper IS NOT NULL` — they already filter by designation, which is NULL on deactivated rows, so they'll skip CRAFT Leavenworth naturally. But future deactivations of still-designated stores would leak; better to add `is_active` check defensively.
+
+### 7h. Stage 3 manual_chaz duplicate / generic-URL flags
+
+Separate scan of the 66 `website_association_source='manual_chaz'` rows flagged 6 rows for review:
+- 1 shared_bizid (CRAFT Mill Plain + Andresen — documented LCB-duplicate pattern, keep)
+- 1 false-positive (THE PACIFIC OUTPOST — URL heuristic over-flagged a store-specific menu subdomain, keep)
+- 2 Remedy Tulalip rows pointing at same URL — **Stage 6 merge candidate**
+- 2 manual-review cases: IT IS LIT → i90 Green House; WASHINGTON O G, LLC → American Mary Belltown — legal-name-vs-DBA patterns
+
+Full details + per-row suggested actions in [`audit/41-appendix-joint-duplicate-bizids.md`](41-appendix-joint-duplicate-bizids.md).
 
 ## Section 8 — Stage 6 preview
 
@@ -228,8 +253,12 @@ Stage 6 scope (preview for future planning):
 - Migration (columns): `supabase/migrations/20260419150000_phase_1j_stage_5_columns.sql`
 - Migration (mapping table): `supabase/migrations/20260419160000_phase_1j_stage_5_mapping_table.sql`
 - Migration (populate + apply + carry-forward): `supabase/migrations/20260419170000_phase_1j_stage_5_apply.sql`
+- Migration (is_active flag): `supabase/migrations/20260419180000_phase_1j_stage_5_is_active.sql`
+- Migration (deactivate CRAFT Leavenworth): `supabase/migrations/20260419190000_phase_1j_stage_5_deactivate_leavenworth.sql`
 - Verify script: `scripts/phase-1j-stage-5-verify.mjs`
 - Verify output: `audit/logs/phase-1j-stage-5-verify.json`
+- Duplicate-URL scan script: `scripts/phase-1j-stage-5-duplicate-scan.mjs`
+- Duplicate-URL appendix: `audit/41-appendix-joint-duplicate-bizids.md`
 
 ## Gate
 
