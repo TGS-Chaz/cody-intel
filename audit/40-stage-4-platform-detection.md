@@ -2,6 +2,13 @@
 
 **2026-04-19. Re-ran verify-platform scanner against the cleaned v2 population. Run ID `ec3b40a1-3ae0-48a3-a361-962e0ab82baf`. 446 v2 rows with websites scanned. 280 verified platform detections (62.8%), 147 none, 19 errors. 88% agreement with Phase 1h on the 414-row overlap; 25 net improvements, 17 regressions, 6 changed — all tractable.**
 
+> **Follow-up sub-stages (applied to the same run_id via upsert):**
+> - Sub-stage A (audit/42) +2 recoveries (rescan of 41 gap/regressed)
+> - Sub-stage B (audit/43) +5 recoveries (refreshed Jane detector after the `tags.cnna.io` migration was discovered)
+> - Sub-stage C (audit/44) +10 recoveries (full-bucket rescan of all 144 Stage-4 `none` rows with the refreshed detector)
+>
+> Net total v2 designated stores after all sub-stages: **296** (Jane 91, Dutchie 77, POSaBit 65, Leafly 44, Joint 18, Weedmaps 1). The "Section 2 platform distribution" snapshot below reflects the original Stage 4 run only.
+
 ## Headline
 
 | Outcome | Stage 4 | Phase 1h | Delta |

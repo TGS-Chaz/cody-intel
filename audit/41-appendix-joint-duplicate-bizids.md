@@ -49,6 +49,14 @@ Occurs when a store changes its trade name after the LCB snapshot was pulled but
 
 > Any website Chaz set during Stage 3 review (`website_association_source = 'manual_chaz'`) is authoritative. Don't re-flag manual_chaz entries as suspicious in future audits. If an audit finds what appears to be a website mismatch on a manual_chaz row, the resolution is to document the legal-name-vs-DBA (or LCB-duplicate, or rebrand) relationship, not to flag for review.
 
+## Follow-on Sub-stages (also resolved no-flag-needed)
+
+- **Sub-stage A** (audit/42): rescanned 41 Stage-4 gap+regressed stores with `waitMs=60000`. 2 recoveries.
+- **Sub-stage B** (audit/43): discovered + refreshed the Jane detector for the `iheartjane.com → tags.cnna.io` migration. 5 recoveries.
+- **Sub-stage C** (audit/44): full-bucket rescan of 144 Stage-4 `none` rows with the refreshed detector. 10 more recoveries (7 Jane, 2 POSaBit, 1 Dutchie).
+
+Net: Stage 4 designations 280 → **296** after A/B/C. Jane alone went 78 → 91 (+16%).
+
 ## Artifacts
 
 - Scan script: `scripts/phase-1j-stage-5-duplicate-scan.mjs` (kept for reference; do not re-run against manual_chaz rows)
