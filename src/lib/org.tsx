@@ -44,43 +44,51 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     async function load() {
       setLoading(true);
 
-      const { data: members, error: memErr } = await supabase
-        .from("org_members")
-        .select("org_id, role")
-        .eq("user_id", user!.id);
+      try {
+        const { data: members, error: memErr } = await supabase
+          .from("org_members")
+          .select("org_id, role")
+          .eq("user_id", user!.id);
 
-      if (memErr || !members || members.length === 0) { setLoading(false); return; }
+        if (memErr || !members || members.length === 0) return;
 
-      const orgIds = members.map((m: { org_id: string }) => m.org_id);
-      const { data: orgs, error: orgErr } = await supabase
-        .from("organizations")
-        .select("id, name, slug, logo_url, plan, intel_plan, crm_plan")
-        .in("id", orgIds);
+        const orgIds = members.map((m: { org_id: string }) => m.org_id);
+        const { data: orgs, error: orgErr } = await supabase
+          .from("organizations")
+          .select("id, name, slug, logo_url, plan, intel_plan, crm_plan")
+          .in("id", orgIds);
 
-      if (orgErr) { setLoading(false); return; }
+        if (orgErr) return;
 
-      const orgMap = new Map((orgs ?? []).map((o: Organization) => [o.id, o]));
-      const mems = (members ?? [])
-        .filter((m: { org_id: string }) => orgMap.has(m.org_id))
-        .map((m: { org_id: string; role: string }) => ({
-          org_id: m.org_id,
-          role: m.role,
-          organization: orgMap.get(m.org_id) as Organization,
-        }));
+        const orgMap = new Map((orgs ?? []).map((o: Organization) => [o.id, o]));
+        const mems = (members ?? [])
+          .filter((m: { org_id: string }) => orgMap.has(m.org_id))
+          .map((m: { org_id: string; role: string }) => ({
+            org_id: m.org_id,
+            role: m.role,
+            organization: orgMap.get(m.org_id) as Organization,
+          }));
 
-      setMemberships(mems);
+        setMemberships(mems);
 
-      if (mems.length > 0) {
-        const savedOrgId = localStorage.getItem("cody-active-org");
-        const active = mems.find((m) => m.org_id === savedOrgId) ?? mems[0];
-        setOrg(active.organization);
-        setRole(active.role);
-        localStorage.setItem("cody-active-org", active.org_id);
-      } else {
-        setOrg(null);
-        setRole(null);
+        if (mems.length > 0) {
+          const savedOrgId = localStorage.getItem("cody-active-org");
+          const active = mems.find((m) => m.org_id === savedOrgId) ?? mems[0];
+          setOrg(active.organization);
+          setRole(active.role);
+          localStorage.setItem("cody-active-org", active.org_id);
+        } else {
+          setOrg(null);
+          setRole(null);
+        }
+      } catch (err) {
+        // Phase 1j audit/47 fix A — guarantee setLoading(false) even if
+        // an await hangs or throws (network blip, auth-token race). App
+        // gate must render so the user can retry instead of spinning.
+        console.warn("[org] load failed:", err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
 
     load();

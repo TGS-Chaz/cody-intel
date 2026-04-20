@@ -26,8 +26,19 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) { setProfile(null); setLoading(false); return; }
     setLoading(true);
+    // Phase 1j audit/47 fix A — supabase's query-builder thenable is typed
+    // as PromiseLike<void>, which has no .catch(). Pass the rejection
+    // handler as the 2nd arg so we still land on a rendered app-gate if
+    // the network drops or the auth token races.
     supabase.from("profiles").select("*").eq("id", user.id).single()
-      .then(({ data }) => { setProfile(data ?? null); setLoading(false); });
+      .then(
+        ({ data }) => { setProfile(data ?? null); setLoading(false); },
+        (err: unknown) => {
+          console.warn("[profile] load failed:", err);
+          setProfile(null);
+          setLoading(false);
+        },
+      );
   }, [user?.id]);
 
   return (
