@@ -96,6 +96,24 @@ Migration `20260419180000_phase_1j_stage_5_is_active.sql` added three general-pu
 - `deactivated_reason TEXT`
 - `deactivated_at TIMESTAMPTZ`
 
+### Legal-vs-DBA and rebrand patterns (reference — don't re-flag these)
+
+Three structural patterns recur across the v2 dataset. All are expected and correct; Chaz confirmed them 2026-04-19 after the initial Stage 5 appendix flagged them. Future audits should document new instances here rather than flagging for review.
+
+**LCB-duplicate pattern** — one physical business, multiple LCB licenses. Both rows carry the same website and (when Joint) the same `joint_business_id`.
+- CRAFT CANNABIS Mill Plain (lic 413732) + CRAFT CANNABIS, INC. Andresen (lic 431536) — Vancouver, both → mill-plain-dispensary URL, bizId 4353.
+- Remedy Tulalip + REMEDY TULALIP — tribal, both → remedytulalip.com/shop/.
+
+**Legal entity ≠ DBA** — LCB license is held by a legal shell; store operates under a different brand. Website routes correctly; `name` shows legal entity. A `dba_name` column would polish dashboards but isn't needed for scraping.
+- MOUNT VERNON RETAIL HOLDINGS LLC (lic 422796) → Floyd's Cannabis Mount Vernon (bizId 6114).
+- DTC HOLDINGS (lic 6115) → Floyd's Cannabis Port Angeles.
+- WASHINGTON O G, LLC (lic 431327) → American Mary Belltown.
+
+**Post-LCB-snapshot rebrand** — store renamed after the LCB list was pulled; `name` is stale but website points at current brand.
+- IT IS LIT (lic 423203) → renamed to I90 Greenhouse; site is `menu.i90greenhouse.com`.
+
+Full resolution details in [`audit/41-appendix-joint-duplicate-bizids.md`](41-appendix-joint-duplicate-bizids.md).
+
 ## Section 5 — Carry-forward results
 
 Per-platform breakdown of scraper-tracking fields migrated from v1 to v2. "Slug/id" = platform's primary identifier (dutchie_slug, jane_store_id, leafly_slug, posabit_merchant, joint_business_id, weedmaps_slug). "last_scraped_at" = the platform-specific timestamp.
@@ -183,15 +201,11 @@ The new `is_active` column must be honored by every scraper / cron / dashboard q
 - Dashboard KPIs (`Stores directory`, coverage reports, store-count widgets): filter `is_active = true` or explicitly show inactive.
 - Any pg_cron wrappers that read `designated_scraper IS NOT NULL` — they already filter by designation, which is NULL on deactivated rows, so they'll skip CRAFT Leavenworth naturally. But future deactivations of still-designated stores would leak; better to add `is_active` check defensively.
 
-### 7h. Stage 3 manual_chaz duplicate / generic-URL flags
+### 7h. Stage 3 manual_chaz duplicate / generic-URL flags — RESOLVED
 
-Separate scan of the 66 `website_association_source='manual_chaz'` rows flagged 6 rows for review:
-- 1 shared_bizid (CRAFT Mill Plain + Andresen — documented LCB-duplicate pattern, keep)
-- 1 false-positive (THE PACIFIC OUTPOST — URL heuristic over-flagged a store-specific menu subdomain, keep)
-- 2 Remedy Tulalip rows pointing at same URL — **Stage 6 merge candidate**
-- 2 manual-review cases: IT IS LIT → i90 Green House; WASHINGTON O G, LLC → American Mary Belltown — legal-name-vs-DBA patterns
+All 6 flagged rows confirmed correct by Chaz 2026-04-19. No action. Three structural patterns documented above in Section 4: LCB-duplicate, legal-vs-DBA, post-snapshot rebrand. Standing rule now in effect: **manual_chaz entries are authoritative; future audits should document underlying relationships rather than flag for review.**
 
-Full details + per-row suggested actions in [`audit/41-appendix-joint-duplicate-bizids.md`](41-appendix-joint-duplicate-bizids.md).
+Full resolution table in [`audit/41-appendix-joint-duplicate-bizids.md`](41-appendix-joint-duplicate-bizids.md).
 
 ## Section 8 — Stage 6 preview
 
