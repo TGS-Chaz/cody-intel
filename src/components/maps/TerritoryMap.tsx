@@ -302,7 +302,9 @@ export function TerritoryMap() {
                         <p className="font-semibold text-sm">{s.name}</p>
                         {s.city && <p className="text-xs text-muted-foreground">{s.city}</p>}
                         <p className="text-xs text-muted-foreground/70">
-                          {s.total_products.toLocaleString()} products
+                          {s.total_products != null
+                            ? `${s.total_products.toLocaleString()} products`
+                            : "— products"}
                         </p>
                       </div>
                     </Popup>

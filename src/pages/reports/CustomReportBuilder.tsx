@@ -127,6 +127,7 @@ export function CustomReportBuilder() {
   // Load total store count once for coverage_pct
   useEffect(() => {
     supabase.from("intel_stores").select("id", { count: "exact", head: true })
+      .eq("is_active", true)
       .then(({ count }) => setTotalStores(count ?? 0));
   }, []);
 

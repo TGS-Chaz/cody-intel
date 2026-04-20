@@ -250,10 +250,10 @@ export function Dashboard() {
   // ── Phase 1: fast queries ──────────────────────────────────────────────────
   const loadFast = useCallback(async () => {
     const [storesRes, storesWithMenuRes, alertsRes, topStoresRes, recentAlertsRes] = await Promise.all([
-      supabase.from("intel_stores").select("id", { count: "exact", head: true }),
-      supabase.from("intel_stores").select("id", { count: "exact", head: true }).not("total_products", "is", null).gt("total_products", 0),
+      supabase.from("intel_stores").select("id", { count: "exact", head: true }).eq("is_active", true),
+      supabase.from("intel_stores").select("id", { count: "exact", head: true }).eq("is_active", true).not("total_products", "is", null).gt("total_products", 0),
       supabase.from("intel_alerts").select("id", { count: "exact", head: true }).eq("is_read", false),
-      supabase.from("intel_stores").select("id, name, city, total_products, menu_last_updated").order("total_products", { ascending: false }).limit(5),
+      supabase.from("intel_stores").select("id, name, city, total_products, menu_last_updated").eq("is_active", true).order("total_products", { ascending: false }).limit(5),
       supabase.from("intel_alerts").select("id, title, severity, alert_type, brand_name, created_at").order("created_at", { ascending: false }).limit(8),
     ]);
 

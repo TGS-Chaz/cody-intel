@@ -277,6 +277,7 @@ async function runPosabitFastBatch(
     .from("intel_stores")
     .select("id, name, city")
     .eq("status", "active")
+    .eq("is_active", true)
     .not("posabit_merchant_token", "is", null);
 
   const stores = (readyStores ?? []) as Array<{ id: string; name: string; city: string | null }>;
@@ -466,7 +467,9 @@ export function ScraperAdmin() {
   // Exclusion sets for link search
   const [storesWithMenuIds, setStoresWithMenuIds] = useState<Set<string>>(new Set());
   const [storesAlreadyLinkedIds, setStoresAlreadyLinkedIds] = useState<Set<string>>(new Set());
-  const [licenseMap, setLicenseMap] = useState<Record<string, string>>({});
+  // Post-Phase-1j swap: intel_stores.lcb_license_id IS the LCB license number
+  // (TEXT). No lcb_licenses lookup table needed — kept this comment so the pattern
+  // isn't re-introduced. See audit/44 Stage-6 pre-swap audit.
 
   // Linking state
   const [linkingId, setLinkingId] = useState<string | null>(null);
@@ -526,6 +529,7 @@ export function ScraperAdmin() {
           supabase.from("intel_stores")
             .select("id, name, city, county, address, zip, phone, lcb_license_id, crm_contact_id, dutchie_slug, leafly_slug, weedmaps_slug, posabit_feed_key")
             .eq("status", "active")
+            .eq("is_active", true)
             .order("name"),
           supabase.from("dispensary_menus")
             .select("intel_store_id")
@@ -534,15 +538,10 @@ export function ScraperAdmin() {
             .select("matched_intel_store_id")
             .eq("matched", true)
             .not("matched_intel_store_id", "is", null),
-          supabase.from("lcb_licenses")
-            .select("id, license_number"),
-        ]).then(([storesRes, menusRes, linkedRes, licensesRes]) => {
+        ]).then(([storesRes, menusRes, linkedRes]) => {
           setAllIntelStores((storesRes.data as IntelStore[]) ?? []);
           setStoresWithMenuIds(new Set((menusRes.data ?? []).map((r: any) => r.intel_store_id as string)));
           setStoresAlreadyLinkedIds(new Set((linkedRes.data ?? []).map((r: any) => r.matched_intel_store_id as string)));
-          const lmap: Record<string, string> = {};
-          for (const r of (licensesRes.data ?? [])) { if (r.id && r.license_number) lmap[r.id] = r.license_number; }
-          setLicenseMap(lmap);
         });
       }
     }
@@ -1179,7 +1178,7 @@ export function ScraperAdmin() {
                                 {linkResults.length > 0 && (
                                   <div className="rounded-md border border-border bg-card shadow-sm overflow-hidden max-w-lg divide-y divide-border/50">
                                     {linkResults.map((s) => {
-                                      const licNum = s.lcb_license_id ? licenseMap[s.lcb_license_id] : null;
+                                      const licNum = s.lcb_license_id ?? null;
                                       return (
                                         <button
                                           key={s.id}
@@ -1206,7 +1205,7 @@ export function ScraperAdmin() {
 
                                 {/* Confirm */}
                                 {linkSelected && (() => {
-                                  const licNum = linkSelected.lcb_license_id ? licenseMap[linkSelected.lcb_license_id] : null;
+                                  const licNum = linkSelected.lcb_license_id ?? null;
                                   return (
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <span className="text-[11px] text-muted-foreground">

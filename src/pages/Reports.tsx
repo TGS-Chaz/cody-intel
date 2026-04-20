@@ -333,10 +333,10 @@ function CoverageReport() {
     async function load() {
       setLoading(true);
       const [storeRes, menusRes, intelRes, totalRes] = await Promise.all([
-        supabase.from("intel_stores").select("id", { count: "exact", head: true }).gt("total_products", 0),
+        supabase.from("intel_stores").select("id", { count: "exact", head: true }).eq("is_active", true).gt("total_products", 0),
         supabase.from("dispensary_menus").select("source, intel_store_id, menu_item_count").not("intel_store_id", "is", null),
-        supabase.from("intel_stores").select("id, city, total_products").eq("status", "active"),
-        supabase.from("intel_stores").select("id", { count: "exact", head: true }).eq("status", "active"),
+        supabase.from("intel_stores").select("id, city, total_products").eq("status", "active").eq("is_active", true),
+        supabase.from("intel_stores").select("id", { count: "exact", head: true }).eq("status", "active").eq("is_active", true),
       ]);
 
       setWithData(storeRes.count ?? 0);
@@ -511,6 +511,7 @@ function PriceReport() {
         supabase.from("dispensary_menus").select("id, intel_store_id").not("intel_store_id", "is", null),
         supabase.from("user_brands").select("brand_name").eq("is_own_brand", true),
         supabase.from("intel_stores").select("id, name, city, crm_contact_id")
+          .eq("is_active", true)
           .not("crm_contact_id", "is", null)
           .order("name")
           .limit(300),
