@@ -1,123 +1,81 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import type { IntelStore } from "@/lib/types";
 import {
-  Play, Square, CheckCircle2, AlertCircle, RefreshCw, AlertTriangle,
-  Layers, Link2, Search, X, Zap, Globe,
+  CheckCircle2, AlertCircle, RefreshCw, Link2, Search, X, Zap, Clock, Play, ExternalLink,
 } from "lucide-react";
 
-// ─── Platform definitions ─────────────────────────────────────────────────────
+// ─── Scraper configuration ────────────────────────────────────────────────────
+// Post-Stage-6 (2026-04-20): 5 scrapers run nightly via pg_cron. Manual triggers
+// stay available as admin buttons for testing / emergencies.
 
-interface Platform {
-  id: string;
+interface Scraper {
+  id: "dutchie" | "jane" | "leafly" | "posabit" | "joint";
   label: string;
-  source: string;
   color: string;
   description: string;
-  functionName: string;
-  batchSize: number;
-  blocked?: boolean | string;
-  deprecated?: boolean;
+  cronJobName: string;              // pg_cron jobname
+  edgeFunctionName: string;         // Supabase edge function name
+  scheduleLabel: string;            // Human-readable "12:15 UTC"
 }
 
-const PLATFORMS: Platform[] = [
+const SCRAPERS: Scraper[] = [
+  {
+    id: "joint",
+    label: "Joint",
+    color: "hsl(var(--platform-joint, 0 72% 50%))",
+    description: "WordPress plugin via /wp-json/joint-ecommerce/v1/. Chain-shared catalogs (CRAFT, Floyd's, DANK'S, LIDZ).",
+    cronJobName: "cody-scrape-joint",
+    edgeFunctionName: "scrape-joint",
+    scheduleLabel: "12:00 UTC",
+  },
   {
     id: "dutchie",
     label: "Dutchie",
-    source: "dutchie-api",
     color: "hsl(var(--platform-dutchie))",
-    description: "Discovers WA stores via Dutchie GraphQL API, matches to LCB stores by address, fetches complete menus",
-    functionName: "scrape-dutchie",
-    batchSize: 10,
-  },
-  {
-    id: "posabit",
-    label: "POSaBit",
-    source: "posabit-api",
-    color: "hsl(var(--platform-posabit))",
-    description: "Scans intel_stores websites for POSaBit embeds, fetches menus via MCX API",
-    functionName: "scrape-posabit",
-    batchSize: 2,
-  },
-  {
-    id: "leafly",
-    label: "Leafly",
-    source: "leafly",
-    color: "hsl(var(--platform-leafly))",
-    description: "Discovers WA dispensaries via Leafly WA state page, matches to LCB stores, fetches complete menus",
-    functionName: "scrape-leafly",
-    batchSize: 4,
-  },
-  {
-    id: "weedmaps",
-    label: "Weedmaps",
-    source: "weedmaps",
-    color: "hsl(var(--platform-weedmaps))",
-    description: "Deprecated — Weedmaps scraping is temporarily disabled while we evaluate alternative data sources. Historical data preserved.",
-    functionName: "scrape-weedmaps",
-    batchSize: 5,
-    blocked: true,
-    deprecated: true,
+    description: "Dutchie Plus embed. Discovers via GraphQL, matches to LCB by address, fetches menus.",
+    cronJobName: "cody-scrape-dutchie",
+    edgeFunctionName: "scrape-dutchie",
+    scheduleLabel: "12:15 UTC",
   },
   {
     id: "jane",
     label: "Jane",
-    source: "jane-embed",
     color: "hsl(var(--platform-jane))",
-    description: "iHeartJane menus via the /embed/stores/{id}/menu page — no proxy needed",
-    functionName: "scrape-jane",
-    batchSize: 3,
+    description: "iHeartJane / tags.cnna.io embed. Detector refreshed in Sub-stage B (audit/43).",
+    cronJobName: "cody-scrape-jane",
+    edgeFunctionName: "scrape-jane",
+    scheduleLabel: "12:30 UTC",
+  },
+  {
+    id: "leafly",
+    label: "Leafly",
+    color: "hsl(var(--platform-leafly))",
+    description: "Leafly dispensary-info widget. Mostly WA-specific direct embeds.",
+    cronJobName: "cody-scrape-leafly",
+    edgeFunctionName: "scrape-leafly",
+    scheduleLabel: "12:45 UTC",
+  },
+  {
+    id: "posabit",
+    label: "POSaBit",
+    color: "hsl(var(--platform-posabit))",
+    description: "POSaBit MCX widget. Needs per-store credentials (merchant_slug, venue_slug, feed_id, merchant_token).",
+    cronJobName: "cody-scrape-posabit",
+    edgeFunctionName: "scrape-posabit",
+    scheduleLabel: "13:00 UTC",
   },
 ];
 
-const SCRAPE_ALL_PLATFORMS = PLATFORMS.filter((p) => !p.blocked);
-const TOTAL_STORES = 458;
-
-// Platform info for unmatched view
-const PLATFORM_INFO: Record<string, { letter: string; color: string; label: string; slugField: string; functionName: string }> = {
-  dutchie:  { letter: "D", color: "hsl(var(--platform-dutchie))",  label: "Dutchie",   slugField: "dutchie_slug",   functionName: "scrape-dutchie"  },
-  leafly:   { letter: "L", color: "hsl(var(--platform-leafly))",   label: "Leafly",    slugField: "leafly_slug",    functionName: "scrape-leafly"   },
-  weedmaps: { letter: "W", color: "hsl(var(--platform-weedmaps))", label: "Weedmaps",  slugField: "weedmaps_slug",  functionName: "scrape-weedmaps" },
-  jane:     { letter: "J", color: "hsl(var(--platform-jane))",     label: "Jane",      slugField: "jane_store_id",  functionName: "scrape-jane"     },
+// Platform lookup used in Unmatched-tab row badges.
+const PLATFORM_INFO: Record<string, {
+  letter: string; color: string; label: string; slugField: string; functionName: string;
+}> = {
+  dutchie:  { letter: "D", color: "hsl(var(--platform-dutchie))",  label: "Dutchie",  slugField: "dutchie_slug",    functionName: "scrape-dutchie"  },
+  leafly:   { letter: "L", color: "hsl(var(--platform-leafly))",   label: "Leafly",   slugField: "leafly_slug",     functionName: "scrape-leafly"   },
+  weedmaps: { letter: "W", color: "hsl(var(--platform-weedmaps))", label: "Weedmaps", slugField: "weedmaps_slug",   functionName: "scrape-weedmaps" },
+  jane:     { letter: "J", color: "hsl(var(--platform-jane))",     label: "Jane",     slugField: "jane_store_id",   functionName: "scrape-jane"     },
 };
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface PlatformStats {
-  storesLinked: number;
-  productsScraped: number;
-  lastScraped: string | null;
-}
-
-type RunState = "idle" | "running" | "done" | "error";
-
-interface RunStatus {
-  state: RunState;
-  message: string;
-  progressText?: string;
-}
-
-interface ScrapeAllState {
-  running: boolean;
-  platformIdx: number;
-  progressText: string;
-  totalScraped: number;
-  totalProducts: number;
-  done: boolean;
-  error?: string;
-}
-
-type LogEntryStatus = "saved" | "skipped" | "failed" | "empty" | "no-widget";
-
-interface LogEntry {
-  storeName: string;
-  city?: string | null;
-  status: LogEntryStatus;
-  products?: number;
-  reason?: string;
-  existingSource?: string;
-  timestamp: number;
-}
 
 interface UnmatchedDiscovery {
   id: string;
@@ -138,203 +96,23 @@ interface UnmatchedDiscovery {
   matched_intel_store_id: string | null;
 }
 
+interface ScraperStats {
+  designated: number;      // intel_stores.designated_scraper = X
+  eligible: number;        // + is_active + has_online_menu=true (what cron hits)
+  withMenu: number;        // dispensary_menus rows joined by intel_store_id
+  products: number;        // sum of dispensary_menus.menu_item_count
+  lastScraped: string | null;  // max over per-platform *_last_scraped_at on v2 rows
+}
+
+interface TopKpis {
+  total: number;
+  active: number;
+  inactive: number;
+  designated: number;
+  withMenu: number;
+}
+
 type AdminView = "platforms" | "unmatched";
-
-// ─── Scrape log ───────────────────────────────────────────────────────────────
-
-function ScrapeLog({ entries }: { entries: LogEntry[] }) {
-  if (entries.length === 0) return null;
-  const icon = (s: LogEntryStatus) => {
-    if (s === "saved")     return "✅";
-    if (s === "skipped")   return "⏭️";
-    if (s === "empty")     return "⬜";
-    if (s === "no-widget") return "🔍";
-    return "❌";
-  };
-  return (
-    <div className="mt-1 max-h-44 overflow-y-auto rounded-md bg-muted/20 border border-border/40 p-2 space-y-0.5 font-mono text-[10px]">
-      {[...entries].reverse().map((e, i) => (
-        <div key={i} className="flex items-baseline gap-1.5 leading-relaxed">
-          <span className="shrink-0">{icon(e.status)}</span>
-          <span className="font-semibold text-foreground truncate">{e.storeName}</span>
-          {e.city && <span className="text-muted-foreground shrink-0">{e.city}</span>}
-          {e.status === "saved" && e.products != null && (
-            <span className="text-muted-foreground shrink-0">· {e.products} products</span>
-          )}
-          {e.reason && <span className="text-muted-foreground/70 italic truncate">· {e.reason}</span>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Core scrape helper ───────────────────────────────────────────────────────
-
-async function runPlatformBatch(
-  platform: Platform,
-  session: { access_token: string },
-  supabaseUrl: string,
-  anonKey: string,
-  signal: AbortSignal,
-  onProgress: (text: string) => void,
-  onStatsRefresh: () => Promise<void>,
-  onBatchDone: (entries: LogEntry[]) => void,
-): Promise<{ totalScraped: number; totalProducts: number }> {
-  const fnUrl = `${supabaseUrl}/functions/v1/${platform.functionName}`;
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${session.access_token}`,
-    apikey: anonKey,
-  };
-
-  onProgress("Discovering stores...");
-  const discoverRes = await fetch(fnUrl, { method: "POST", headers, body: JSON.stringify({ action: "discover" }), signal });
-  const discoverData = await discoverRes.json();
-  if (!discoverRes.ok) throw new Error(discoverData.error ?? `Discover HTTP ${discoverRes.status}`);
-
-  const candidates: any[] = discoverData.candidates ?? [];
-  if (candidates.length === 0) {
-    onProgress("No matching stores found");
-    return { totalScraped: 0, totalProducts: 0 };
-  }
-
-  const totalBatches = Math.ceil(candidates.length / platform.batchSize);
-  let totalScraped = 0, totalProducts = 0;
-
-  for (let b = 0; b < totalBatches; b++) {
-    if (signal.aborted) break;
-    onProgress(`Batch ${b + 1}/${totalBatches} · ${totalScraped} scraped · ${totalProducts.toLocaleString()} products`);
-    const batch = candidates.slice(b * platform.batchSize, (b + 1) * platform.batchSize);
-    const batchRes = await fetch(fnUrl, { method: "POST", headers, body: JSON.stringify({ action: "scrape-batch", stores: batch }), signal });
-    if (batchRes.ok) {
-      const batchData = await batchRes.json();
-      totalScraped += batchData.scraped ?? 0;
-      totalProducts += batchData.products_saved ?? 0;
-      const entries: LogEntry[] = (batchData.results ?? []).map((r: any): LogEntry => {
-        const s = r.status ?? "";
-        let status: LogEntryStatus = "saved";
-        if (s === "skipped") status = "skipped";
-        else if (s === "empty-menu") status = "empty";
-        else if (s === "no-widget") status = "no-widget";
-        else if (s === "success") status = "saved";
-        else status = "failed";
-        return { storeName: r.store ?? "Unknown", city: r.city ?? null, status, products: r.products, reason: r.reason, existingSource: r.existingSource, timestamp: Date.now() };
-      });
-      if (entries.length > 0) onBatchDone(entries);
-    }
-    await onStatsRefresh();
-  }
-  return { totalScraped, totalProducts };
-}
-
-// ─── POSaBit fast-scan + per-store scrape pipeline ──────────────────────────
-// Replaces the old discover/scrape-batch loop. Two phases:
-//   1. fast-scan populates posabit credentials on intel_stores in seconds
-//   2. scrape-posabit-single runs per store that now has a merchant_token
-async function runPosabitFastBatch(
-  session:       { access_token: string },
-  supabaseUrl:   string,
-  anonKey:       string,
-  signal:        AbortSignal,
-  onProgress:    (text: string) => void,
-  onStatsRefresh: () => Promise<void>,
-  onBatchDone:   (entries: LogEntry[]) => void,
-): Promise<{ totalScraped: number; totalProducts: number }> {
-  const fnUrl = `${supabaseUrl}/functions/v1/scrape-posabit`;
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${session.access_token}`,
-    apikey: anonKey,
-  };
-
-  // Phase 1 — fast-scan populates posabit_merchant_token on intel_stores
-  onProgress("Fast-scanning stores for POSaBit widgets…");
-  const scanRes = await fetch(fnUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ action: "fast-scan", limit: 500, onlyMissing: true }),
-    signal,
-  });
-  const scanData = await scanRes.json();
-  if (!scanRes.ok) throw new Error(scanData.error ?? `fast-scan HTTP ${scanRes.status}`);
-
-  const newlyCredentialed = (scanData.results ?? [])
-    .filter((r: any) => r.hasPosabit && r.config?.merchant_token);
-
-  // Surface scan results as log entries up front
-  onBatchDone(newlyCredentialed.map((r: any): LogEntry => ({
-    storeName: r.name,
-    city:      r.city ?? null,
-    status:    "saved",
-    reason:    `credentials captured · ${r.detectedUrl ?? ""}`,
-    timestamp: Date.now(),
-  })));
-
-  // Phase 2 — scrape every store with a persisted merchant_token.
-  // Uses a direct supabase read to fetch all posabit-enabled stores (existing +
-  // new from phase 1), because a single store may already have had creds.
-  const { data: readyStores } = await supabase
-    .from("intel_stores")
-    .select("id, name, city")
-    .eq("status", "active")
-    .eq("is_active", true)
-    .not("posabit_merchant_token", "is", null);
-
-  const stores = (readyStores ?? []) as Array<{ id: string; name: string; city: string | null }>;
-  if (!stores.length) {
-    onProgress(`No stores with POSaBit credentials yet · scanned ${scanData.scanned ?? 0}`);
-    return { totalScraped: 0, totalProducts: 0 };
-  }
-
-  let totalScraped = 0, totalProducts = 0;
-  for (let i = 0; i < stores.length; i++) {
-    if (signal.aborted) break;
-    const s = stores[i];
-    onProgress(`Scraping ${s.name}${s.city ? `, ${s.city}` : ""} · ${i + 1}/${stores.length} · ${totalProducts.toLocaleString()} products`);
-    try {
-      const r = await fetch(fnUrl, {
-        method: "POST",
-        headers,
-        // storeId-only; scrape-posabit-single reads creds from intel_stores row
-        body: JSON.stringify({ action: "scrape-posabit-single", storeId: s.id }),
-        signal,
-      });
-      const data = await r.json().catch(() => ({}));
-      if (r.ok && data.status === "success") {
-        totalScraped  += 1;
-        totalProducts += data.products_saved ?? 0;
-        onBatchDone([{
-          storeName: s.name, city: s.city,
-          status: "saved", products: data.products_saved,
-          timestamp: Date.now(),
-        }]);
-      } else if (data.status === "empty-menu") {
-        onBatchDone([{
-          storeName: s.name, city: s.city,
-          status: "empty", reason: "empty menu", timestamp: Date.now(),
-        }]);
-      } else {
-        onBatchDone([{
-          storeName: s.name, city: s.city,
-          status: "failed", reason: data.error ?? `HTTP ${r.status}`, timestamp: Date.now(),
-        }]);
-      }
-    } catch (err: any) {
-      if (err.name === "AbortError") break;
-      onBatchDone([{
-        storeName: s.name, city: s.city,
-        status: "failed", reason: err.message, timestamp: Date.now(),
-      }]);
-    }
-    // Refresh dashboard stats every 5 stores
-    if (i % 5 === 4) await onStatsRefresh();
-  }
-
-  await onStatsRefresh();
-  return { totalScraped, totalProducts };
-}
-
-// ─── Build scrape candidate from unmatched discovery ─────────────────────────
 
 function buildScrapeCandidate(d: UnmatchedDiscovery, intel: IntelStore): any | null {
   const base = {
@@ -353,109 +131,23 @@ function buildScrapeCandidate(d: UnmatchedDiscovery, intel: IntelStore): any | n
   return null;
 }
 
-// ─── Platform Card ────────────────────────────────────────────────────────────
-
-function PlatformCard({
-  platform, stats, runStatus, logEntries, onScrape, onStop,
-}: {
-  platform: Platform; stats: PlatformStats | null; runStatus: RunStatus;
-  logEntries: LogEntry[]; onScrape: () => void; onStop: () => void;
-}) {
-  const isRunning = runStatus.state === "running";
-  const freshnessLabel = (iso: string | null) => {
-    if (!iso) return "Never";
-    const diff = Date.now() - new Date(iso).getTime();
-    const hours = Math.floor(diff / 3_600_000);
-    if (hours < 1) return "< 1h ago";
-    if (hours < 24) return `${hours}h ago`;
-    return `${Math.floor(hours / 24)}d ago`;
-  };
-  const freshnessColor = (iso: string | null) => {
-    if (!iso) return "text-muted-foreground";
-    const h = (Date.now() - new Date(iso).getTime()) / 3_600_000;
-    return h < 24 ? "text-success" : h < 72 ? "text-warning" : "text-destructive";
-  };
-
-  return (
-    <div className="rounded-xl border border-border bg-card flex flex-col gap-4 p-5 shadow-sm" style={{ borderTop: `3px solid ${platform.color}` }}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-bold text-foreground">{platform.label}</h3>
-          <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{platform.description}</p>
-        </div>
-        {runStatus.state === "done" && <CheckCircle2 className="w-4 h-4 text-success shrink-0 mt-0.5" />}
-        {runStatus.state === "error" && <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />}
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-lg bg-muted/40 p-2.5 text-center">
-          <p className="text-lg font-bold" style={{ fontFamily: "'JetBrains Mono', monospace", color: platform.color }}>
-            {stats ? stats.storesLinked : "—"}
-          </p>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">/ {TOTAL_STORES}</p>
-        </div>
-        <div className="rounded-lg bg-muted/40 p-2.5 text-center">
-          <p className="text-lg font-bold text-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-            {stats ? stats.productsScraped.toLocaleString() : "—"}
-          </p>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">products</p>
-        </div>
-        <div className="rounded-lg bg-muted/40 p-2.5 text-center">
-          <p className={`text-sm font-semibold ${freshnessColor(stats?.lastScraped ?? null)}`}>
-            {freshnessLabel(stats?.lastScraped ?? null)}
-          </p>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">last run</p>
-        </div>
-      </div>
-      {isRunning && (
-        <div>
-          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-            <div className="h-full rounded-full animate-pulse" style={{ width: "100%", background: platform.color, opacity: 0.7 }} />
-          </div>
-          {runStatus.progressText && <p className="text-[10px] text-muted-foreground mt-1.5 font-mono truncate">{runStatus.progressText}</p>}
-        </div>
-      )}
-      {(runStatus.state === "done" || runStatus.state === "error") && runStatus.message && (
-        <p className={`text-[11px] flex items-start gap-1.5 ${runStatus.state === "error" ? "text-destructive" : "text-success"}`}>
-          {runStatus.state === "error" ? <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" /> : <CheckCircle2 className="w-3 h-3 mt-0.5 shrink-0" />}
-          <span className="font-mono-data">{runStatus.message}</span>
-        </p>
-      )}
-      {logEntries.length > 0 && <ScrapeLog entries={logEntries} />}
-      <div className="mt-auto flex gap-2">
-        {platform.deprecated ? (
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 italic">
-            <AlertTriangle className="w-3.5 h-3.5 text-warning" />
-            Inactive — {platform.description}
-          </div>
-        ) : platform.blocked ? (
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 italic">
-            <AlertTriangle className="w-3.5 h-3.5 text-warning" />{typeof platform.blocked === "string" ? platform.blocked : "Disabled"}
-          </div>
-        ) : isRunning ? (
-          <button onClick={onStop} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors">
-            <Square className="w-3 h-3" />Stop
-          </button>
-        ) : (
-          <button onClick={onScrape} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium text-primary-foreground transition-colors hover:opacity-90" style={{ background: platform.color }}>
-            <Play className="w-3 h-3" />Scrape All
-          </button>
-        )}
-      </div>
-    </div>
-  );
+function formatFreshness(iso: string | null): string {
+  if (!iso) return "Never";
+  const diff = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(diff / 3_600_000);
+  if (h < 1) return "< 1h ago";
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function ScraperAdmin() {
-  const [stats, setStats] = useState<Record<string, PlatformStats>>({});
-  const [runStatuses, setRunStatuses] = useState<Record<string, RunStatus>>(
-    Object.fromEntries(PLATFORMS.map((p) => [p.id, { state: "idle", message: "" }]))
-  );
-  const [scrapeAll, setScrapeAll] = useState<ScrapeAllState | null>(null);
-  const [platformLogs, setPlatformLogs] = useState<Record<string, LogEntry[]>>(
-    Object.fromEntries(PLATFORMS.map((p) => [p.id, []]))
-  );
+  const [kpis, setKpis] = useState<TopKpis | null>(null);
+  const [stats, setStats] = useState<Record<string, ScraperStats>>({});
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [manualTriggering, setManualTriggering] = useState<string | null>(null);
+  const [manualResult, setManualResult] = useState<Record<string, { ok: boolean; msg: string; at: number }>>({});
 
   // Unmatched tab state
   const [activeView, setActiveView] = useState<AdminView>("platforms");
@@ -463,15 +155,8 @@ export function ScraperAdmin() {
   const [unmatchedLoading, setUnmatchedLoading] = useState(false);
   const [unmatchedPlatformFilter, setUnmatchedPlatformFilter] = useState("");
   const [allIntelStores, setAllIntelStores] = useState<IntelStore[]>([]);
-
-  // Exclusion sets for link search
   const [storesWithMenuIds, setStoresWithMenuIds] = useState<Set<string>>(new Set());
   const [storesAlreadyLinkedIds, setStoresAlreadyLinkedIds] = useState<Set<string>>(new Set());
-  // Post-Phase-1j swap: intel_stores.lcb_license_id IS the LCB license number
-  // (TEXT). No lcb_licenses lookup table needed — kept this comment so the pattern
-  // isn't re-introduced. See audit/44 Stage-6 pre-swap audit.
-
-  // Linking state
   const [linkingId, setLinkingId] = useState<string | null>(null);
   const [linkQuery, setLinkQuery] = useState("");
   const [linkSelected, setLinkSelected] = useState<IntelStore | null>(null);
@@ -481,31 +166,71 @@ export function ScraperAdmin() {
   const [scrapedIds, setScrapedIds] = useState<Set<string>>(new Set());
   const [scrapeErrors, setScrapeErrors] = useState<Record<string, string>>({});
 
-  // Website finder state
-  const [wfRunning, setWfRunning] = useState(false);
-  const [wfTotal, setWfTotal] = useState<number | null>(null);
-  const [wfDone, setWfDone] = useState(0);
-  const [wfProgress, setWfProgress] = useState("");
-  const [wfLog, setWfLog] = useState<LogEntry[]>([]);
-  const wfAbortRef = useRef<AbortController | null>(null);
+  const getCallParams = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Not logged in");
+    return { session, supabaseUrl: import.meta.env.VITE_SUPABASE_URL as string, anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY as string };
+  };
 
-  const abortRefs = useRef<Record<string, AbortController>>({});
-  const scrapeAllAbortRef = useRef<AbortController | null>(null);
-  const pollRefs = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  // ── Stats loader ────────────────────────────────────────────────────────────
 
   const loadStats = useCallback(async () => {
-    const { data } = await supabase.from("dispensary_menus").select("source, intel_store_id, menu_item_count, last_scraped_at");
-    if (!data) return;
-    const grouped: Record<string, PlatformStats> = {};
-    for (const platform of PLATFORMS) {
-      const rows = data.filter((r) => r.source === platform.source);
-      const linked = rows.filter((r) => r.intel_store_id !== null);
-      const products = rows.reduce((sum, r) => sum + (r.menu_item_count ?? 0), 0);
-      const dates = rows.map((r) => r.last_scraped_at).filter(Boolean) as string[];
-      grouped[platform.id] = { storesLinked: linked.length, productsScraped: products, lastScraped: dates.length > 0 ? dates.sort().at(-1)! : null };
+    setLoadingStats(true);
+
+    const [totalRes, activeRes, inactiveRes, designatedRes, storesRes, menusRes] = await Promise.all([
+      supabase.from("intel_stores").select("id", { count: "exact", head: true }),
+      supabase.from("intel_stores").select("id", { count: "exact", head: true }).eq("is_active", true),
+      supabase.from("intel_stores").select("id", { count: "exact", head: true }).eq("is_active", false),
+      supabase.from("intel_stores").select("id", { count: "exact", head: true }).not("designated_scraper", "is", null),
+      // Full store rows for per-scraper tallies. Only fields we need.
+      supabase.from("intel_stores")
+        .select("id, designated_scraper, is_active, has_online_menu, dutchie_last_scraped_at, jane_last_scraped_at, leafly_last_scraped_at, posabit_last_scraped_at, joint_last_scraped_at"),
+      supabase.from("dispensary_menus")
+        .select("intel_store_id, source, menu_item_count, last_scraped_at")
+        .not("intel_store_id", "is", null),
+    ]);
+
+    const storesAll = (storesRes.data ?? []) as any[];
+    const menus = (menusRes.data ?? []) as any[];
+
+    const menuIds = new Set<string>();
+    for (const m of menus) if (m.intel_store_id) menuIds.add(m.intel_store_id);
+
+    setKpis({
+      total: totalRes.count ?? 0,
+      active: activeRes.count ?? 0,
+      inactive: inactiveRes.count ?? 0,
+      designated: designatedRes.count ?? 0,
+      withMenu: menuIds.size,
+    });
+
+    const perScraper: Record<string, ScraperStats> = {};
+    for (const sc of SCRAPERS) {
+      const designated = storesAll.filter(s => s.designated_scraper === sc.id);
+      const eligible = designated.filter(s => s.is_active === true && s.has_online_menu === true);
+      const lastScrapedTs = designated
+        .map(s => s[`${sc.id}_last_scraped_at`])
+        .filter(Boolean)
+        .sort()
+        .at(-1) ?? null;
+      // Source strings in dispensary_menus vary (e.g. "dutchie-api", "posabit-api",
+      // "leafly", "jane-embed"). Match any row whose source contains the scraper id.
+      const scraperMenus = menus.filter(m => (m.source ?? "").toLowerCase().includes(sc.id));
+      const withMenuIds = new Set(scraperMenus.map(m => m.intel_store_id));
+      const products = scraperMenus.reduce((s, m) => s + (m.menu_item_count ?? 0), 0);
+      perScraper[sc.id] = {
+        designated: designated.length,
+        eligible: eligible.length,
+        withMenu: withMenuIds.size,
+        products,
+        lastScraped: lastScrapedTs,
+      };
     }
-    setStats(grouped);
+    setStats(perScraper);
+    setLoadingStats(false);
   }, []);
+
+  // ── Unmatched tab data ──────────────────────────────────────────────────────
 
   const loadUnmatched = useCallback(async () => {
     setUnmatchedLoading(true);
@@ -515,244 +240,89 @@ export function ScraperAdmin() {
       .eq("matched", false)
       .order("platform")
       .order("store_name");
-    setUnmatched(data ?? []);
+    setUnmatched((data as UnmatchedDiscovery[]) ?? []);
     setUnmatchedLoading(false);
   }, []);
 
   useEffect(() => { loadStats(); }, [loadStats]);
 
   useEffect(() => {
-    if (activeView === "unmatched") {
-      loadUnmatched();
-      if (allIntelStores.length === 0) {
-        Promise.all([
-          supabase.from("intel_stores")
-            .select("id, name, city, county, address, zip, phone, lcb_license_id, crm_contact_id, dutchie_slug, leafly_slug, weedmaps_slug, posabit_feed_key")
-            .eq("status", "active")
-            .eq("is_active", true)
-            .order("name"),
-          supabase.from("dispensary_menus")
-            .select("intel_store_id")
-            .not("intel_store_id", "is", null),
-          supabase.from("intel_unmatched_discoveries")
-            .select("matched_intel_store_id")
-            .eq("matched", true)
-            .not("matched_intel_store_id", "is", null),
-        ]).then(([storesRes, menusRes, linkedRes]) => {
-          setAllIntelStores((storesRes.data as IntelStore[]) ?? []);
-          setStoresWithMenuIds(new Set((menusRes.data ?? []).map((r: any) => r.intel_store_id as string)));
-          setStoresAlreadyLinkedIds(new Set((linkedRes.data ?? []).map((r: any) => r.matched_intel_store_id as string)));
-        });
-      }
-    }
-  }, [activeView]);
-
-  const startPolling = (id: string) => { stopPolling(id); pollRefs.current[id] = setInterval(loadStats, 5000); };
-  const stopPolling = (id: string) => { if (pollRefs.current[id]) { clearInterval(pollRefs.current[id]); delete pollRefs.current[id]; } };
-  const setStatus = (id: string, update: Partial<RunStatus>) => { setRunStatuses((prev) => ({ ...prev, [id]: { ...prev[id], ...update } })); };
-  const clearLog = (id: string) => setPlatformLogs((prev) => ({ ...prev, [id]: [] }));
-  const appendLog = (id: string, entries: LogEntry[]) => setPlatformLogs((prev) => ({ ...prev, [id]: [...(prev[id] ?? []), ...entries] }));
-
-  const getCallParams = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw new Error("Not logged in");
-    return { session, supabaseUrl: import.meta.env.VITE_SUPABASE_URL as string, anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY as string };
-  };
-
-  const handleScrape = async (platform: Platform) => {
-    const ctrl = new AbortController();
-    abortRefs.current[platform.id] = ctrl;
-    clearLog(platform.id);
-    setStatus(platform.id, { state: "running", message: "", progressText: "Starting..." });
-    startPolling(platform.id);
-    try {
-      const { session, supabaseUrl, anonKey } = await getCallParams();
-
-      // POSaBit: use the fast-scan action to populate credentials, then scrape
-      // every store that now has a merchant_token via scrape-posabit-single.
-      // Bypasses the old slow Puppeteer-per-store discover path.
-      if (platform.id === "posabit") {
-        const { totalScraped, totalProducts } = await runPosabitFastBatch(
-          session, supabaseUrl, anonKey, ctrl.signal,
-          (text) => setStatus(platform.id, { progressText: text }),
-          loadStats,
-          (entries) => appendLog(platform.id, entries),
-        );
-        setStatus(platform.id, { state: "done", message: `${totalScraped} stores · ${totalProducts.toLocaleString()} products`, progressText: undefined });
-        if (activeView === "unmatched") loadUnmatched();
-        return;
-      }
-
-      const { totalScraped, totalProducts } = await runPlatformBatch(
-        platform, session, supabaseUrl, anonKey, ctrl.signal,
-        (text) => setStatus(platform.id, { progressText: text }),
-        loadStats,
-        (entries) => appendLog(platform.id, entries),
-      );
-      setStatus(platform.id, { state: "done", message: `${totalScraped} stores · ${totalProducts.toLocaleString()} products`, progressText: undefined });
-      // Refresh unmatched count if tab is visible
-      if (activeView === "unmatched") loadUnmatched();
-    } catch (err: any) {
-      if (err.name === "AbortError") setStatus(platform.id, { state: "idle", message: "", progressText: undefined });
-      else setStatus(platform.id, { state: "error", message: err.message ?? "Unknown error", progressText: undefined });
-    } finally {
-      stopPolling(platform.id);
-      delete abortRefs.current[platform.id];
-    }
-  };
-
-  const handleStop = (platformId: string) => {
-    abortRefs.current[platformId]?.abort();
-    stopPolling(platformId);
-    setStatus(platformId, { state: "idle", message: "Stopped by user", progressText: undefined });
-  };
-
-  const handleScrapeAll = async () => {
-    const ctrl = new AbortController();
-    scrapeAllAbortRef.current = ctrl;
-    setScrapeAll({ running: true, platformIdx: 0, progressText: "Starting...", totalScraped: 0, totalProducts: 0, done: false });
-    let grandScraped = 0, grandProducts = 0;
-    try {
-      const { session, supabaseUrl, anonKey } = await getCallParams();
-      for (let i = 0; i < SCRAPE_ALL_PLATFORMS.length; i++) {
-        if (ctrl.signal.aborted) break;
-        const platform = SCRAPE_ALL_PLATFORMS[i];
-        setScrapeAll((prev) => prev ? { ...prev, platformIdx: i, progressText: `${platform.label}: discovering...` } : prev);
-        clearLog(platform.id);
-        setStatus(platform.id, { state: "running", message: "", progressText: "Starting via Scrape All..." });
-        startPolling(platform.id);
-        try {
-          const { totalScraped, totalProducts } = await runPlatformBatch(
-            platform, session, supabaseUrl, anonKey, ctrl.signal,
-            (text) => { setStatus(platform.id, { progressText: text }); setScrapeAll((prev) => prev ? { ...prev, progressText: `${platform.label} (${i + 1}/${SCRAPE_ALL_PLATFORMS.length}): ${text}` } : prev); },
-            loadStats,
-            (entries) => appendLog(platform.id, entries),
-          );
-          grandScraped += totalScraped; grandProducts += totalProducts;
-          setStatus(platform.id, { state: "done", message: `${totalScraped} stores · ${totalProducts.toLocaleString()} products`, progressText: undefined });
-          setScrapeAll((prev) => prev ? { ...prev, totalScraped: grandScraped, totalProducts: grandProducts } : prev);
-        } catch (err: any) {
-          if (err.name === "AbortError") break;
-          setStatus(platform.id, { state: "error", message: err.message, progressText: undefined });
-        } finally { stopPolling(platform.id); }
-      }
-    } catch (err: any) {
-      if (err.name !== "AbortError") { setScrapeAll((prev) => prev ? { ...prev, running: false, done: true, error: err.message } : prev); return; }
-    }
-    const wasStopped = ctrl.signal.aborted;
-    setScrapeAll({ running: false, platformIdx: SCRAPE_ALL_PLATFORMS.length - 1, progressText: "", totalScraped: grandScraped, totalProducts: grandProducts, done: true, error: wasStopped ? "Stopped by user" : undefined });
-    scrapeAllAbortRef.current = null;
-    if (activeView === "unmatched") loadUnmatched();
-  };
-
-  const handleStopAll = () => {
-    scrapeAllAbortRef.current?.abort();
-    for (const id of Object.keys(abortRefs.current)) abortRefs.current[id]?.abort();
-  };
-
-  // ── Website finder ─────────────────────────────────────────────────────────
-
-  const handleFindWebsites = async () => {
-    if (wfRunning) { wfAbortRef.current?.abort(); return; }
-    const ctrl = new AbortController();
-    wfAbortRef.current = ctrl;
-    setWfRunning(true);
-    setWfLog([]);
-    setWfDone(0);
-    setWfProgress("Running fast POSaBit scan…");
-    try {
-      const { session, supabaseUrl, anonKey } = await getCallParams();
-
-      const res = await fetch(`${supabaseUrl}/functions/v1/scrape-posabit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}`, apikey: anonKey },
-        body: JSON.stringify({ action: "fast-scan", limit: 500, onlyMissing: true }),
-        signal: ctrl.signal,
+    if (activeView !== "unmatched") return;
+    loadUnmatched();
+    if (allIntelStores.length === 0) {
+      Promise.all([
+        supabase.from("intel_stores")
+          .select("id, name, city, county, address, zip, phone, lcb_license_id, crm_contact_id, dutchie_slug, leafly_slug, weedmaps_slug, posabit_feed_key")
+          .eq("status", "active").eq("is_active", true).order("name"),
+        supabase.from("dispensary_menus").select("intel_store_id").not("intel_store_id", "is", null),
+        supabase.from("intel_unmatched_discoveries").select("matched_intel_store_id").eq("matched", true).not("matched_intel_store_id", "is", null),
+      ]).then(([storesRes, menusRes, linkedRes]) => {
+        setAllIntelStores((storesRes.data as IntelStore[]) ?? []);
+        setStoresWithMenuIds(new Set((menusRes.data ?? []).map((r: any) => r.intel_store_id as string)));
+        setStoresAlreadyLinkedIds(new Set((linkedRes.data ?? []).map((r: any) => r.matched_intel_store_id as string)));
       });
+    }
+  }, [activeView, loadUnmatched, allIntelStores.length]);
 
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error ?? `fast-scan HTTP ${res.status}`);
-      }
+  // ── Manual trigger ─────────────────────────────────────────────────────────
+  // Calls the scrape edge function with action=scrape-all-designated — the same
+  // path the pg_cron job uses nightly. Fires off; result noted in card footer.
 
-      const data = await res.json();
-      const results: any[] = data.results ?? [];
-      setWfTotal(results.length);
-
-      // Map every result to a log entry — show hits first, then misses
-      const hits = results.filter(r => r.hasPosabit);
-      const misses = results.filter(r => !r.hasPosabit);
-      const entries: LogEntry[] = [
-        ...hits.map((r): LogEntry => ({
-          storeName: r.name,
-          city:      r.city ?? null,
-          status:    "saved",
-          reason:    r.detectedUrl ? `POSaBit · ${r.detectedUrl}` : "POSaBit detected",
-          timestamp: Date.now(),
-        })),
-        ...misses.map((r): LogEntry => ({
-          storeName: r.name,
-          city:      r.city ?? null,
-          status:    "no-widget",
-          reason:    r.markers?.length ? `markers: ${r.markers.join(", ")}` : "no POSaBit markers",
-          timestamp: Date.now(),
-        })),
-      ];
-      setWfLog(entries);
-      setWfDone(results.length);
-
-      setWfProgress(
-        `Done in ${data.total_ms ?? "?"}ms — scanned ${data.scanned}, POSaBit confirmed ${data.found}, credentials saved to ${data.updated}`,
-      );
-    } catch (err: any) {
-      if (err.name !== "AbortError") setWfProgress(`Error: ${err.message}`);
-      else setWfProgress("Stopped");
+  const handleManualTrigger = async (sc: Scraper) => {
+    if (manualTriggering) return;
+    if (!confirm(`Manually trigger ${sc.label} cron? This runs the same job that fires at ${sc.scheduleLabel} nightly. Used for testing or emergencies — normal flow is the cron schedule.`)) return;
+    setManualTriggering(sc.id);
+    try {
+      const { session, supabaseUrl, anonKey } = await getCallParams();
+      const res = await fetch(`${supabaseUrl}/functions/v1/${sc.edgeFunctionName}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: anonKey,
+        },
+        body: JSON.stringify({ action: "scrape-all-designated" }),
+      });
+      const txt = await res.text();
+      let parsed: any = null; try { parsed = JSON.parse(txt); } catch {}
+      const msg = parsed
+        ? (parsed.status ? `${parsed.status}${parsed.scraped != null ? ` · ${parsed.scraped} scraped` : ""}${parsed.products_saved != null ? ` · ${parsed.products_saved} products` : ""}` : txt.slice(0, 120))
+        : txt.slice(0, 120);
+      setManualResult(r => ({ ...r, [sc.id]: { ok: res.ok, msg: res.ok ? msg : `HTTP ${res.status}: ${msg}`, at: Date.now() } }));
+      if (res.ok) setTimeout(() => loadStats(), 1500);
+    } catch (e: any) {
+      setManualResult(r => ({ ...r, [sc.id]: { ok: false, msg: e.message ?? String(e), at: Date.now() } }));
     } finally {
-      setWfRunning(false);
+      setManualTriggering(null);
     }
   };
 
-  // ── Linking handlers ───────────────────────────────────────────────────────
+  // ── Linking handlers (Unmatched tab) ────────────────────────────────────────
 
   const handleStartLink = (discoveryId: string) => {
-    setLinkingId(discoveryId);
-    setLinkQuery("");
-    setLinkSelected(null);
+    setLinkingId(discoveryId); setLinkQuery(""); setLinkSelected(null);
   };
-
   const handleCancelLink = () => {
-    setLinkingId(null);
-    setLinkQuery("");
-    setLinkSelected(null);
+    setLinkingId(null); setLinkQuery(""); setLinkSelected(null);
   };
-
   const handleConfirmLink = async (discovery: UnmatchedDiscovery, intel: IntelStore) => {
     setLinkSaving(true);
     try {
-      // Mark discovery as matched
       await supabase.from("intel_unmatched_discoveries")
         .update({ matched: true, matched_intel_store_id: intel.id })
         .eq("id", discovery.id);
-
-      // Save platform slug to intel_stores
       const pi = PLATFORM_INFO[discovery.platform];
       if (pi?.slugField && discovery.platform_slug) {
         await supabase.from("intel_stores")
           .update({ [pi.slugField]: discovery.platform_slug })
           .eq("id", intel.id);
       }
-
-      setLinkedRows((prev) => ({ ...prev, [discovery.id]: intel }));
-      setUnmatched((prev) => prev.filter((u) => u.id !== discovery.id));
-      setStoresAlreadyLinkedIds((prev) => new Set([...prev, intel.id]));
-      setLinkingId(null);
-      setLinkQuery("");
-      setLinkSelected(null);
-    } finally {
-      setLinkSaving(false);
-    }
+      setLinkedRows(prev => ({ ...prev, [discovery.id]: intel }));
+      setUnmatched(prev => prev.filter(u => u.id !== discovery.id));
+      setStoresAlreadyLinkedIds(prev => new Set([...prev, intel.id]));
+      setLinkingId(null); setLinkQuery(""); setLinkSelected(null);
+    } finally { setLinkSaving(false); }
   };
-
   const handleScrapeLinked = async (discovery: UnmatchedDiscovery) => {
     const intel = linkedRows[discovery.id];
     if (!intel) return;
@@ -760,10 +330,8 @@ export function ScraperAdmin() {
     if (!pi?.functionName) return;
     const candidate = buildScrapeCandidate(discovery, intel);
     if (!candidate) return;
-
-    setScrapingIds((prev) => new Set([...prev, discovery.id]));
-    setScrapeErrors((prev) => { const n = { ...prev }; delete n[discovery.id]; return n; });
-
+    setScrapingIds(prev => new Set([...prev, discovery.id]));
+    setScrapeErrors(prev => { const n = { ...prev }; delete n[discovery.id]; return n; });
     try {
       const { session, supabaseUrl, anonKey } = await getCallParams();
       const res = await fetch(`${supabaseUrl}/functions/v1/${pi.functionName}`, {
@@ -773,20 +341,17 @@ export function ScraperAdmin() {
       });
       if (res.ok) {
         const data = await res.json();
-        const scraped = data.scraped ?? 0;
-        if (scraped > 0) {
-          setScrapedIds((prev) => new Set([...prev, discovery.id]));
+        if ((data.scraped ?? 0) > 0) {
+          setScrapedIds(prev => new Set([...prev, discovery.id]));
           await loadStats();
         } else {
-          setScrapeErrors((prev) => ({ ...prev, [discovery.id]: data.results?.[0]?.status ?? "empty" }));
+          setScrapeErrors(prev => ({ ...prev, [discovery.id]: data.results?.[0]?.status ?? "empty" }));
         }
-      } else {
-        setScrapeErrors((prev) => ({ ...prev, [discovery.id]: `HTTP ${res.status}` }));
-      }
+      } else setScrapeErrors(prev => ({ ...prev, [discovery.id]: `HTTP ${res.status}` }));
     } catch (e: any) {
-      setScrapeErrors((prev) => ({ ...prev, [discovery.id]: e.message }));
+      setScrapeErrors(prev => ({ ...prev, [discovery.id]: e.message }));
     } finally {
-      setScrapingIds((prev) => { const s = new Set(prev); s.delete(discovery.id); return s; });
+      setScrapingIds(prev => { const s = new Set(prev); s.delete(discovery.id); return s; });
     }
   };
 
@@ -808,12 +373,6 @@ export function ScraperAdmin() {
       .slice(0, 8);
   }, [linkQuery, allIntelStores, linkingId, unmatched, storesWithMenuIds, storesAlreadyLinkedIds]);
 
-  // ── Derived counts ─────────────────────────────────────────────────────────
-
-  const unmatchedCount = unmatched.length;
-  const isScrapeAllRunning = scrapeAll?.running === true;
-  const anyPlatformRunning = Object.values(runStatuses).some((s) => s.state === "running");
-
   const filteredUnmatched = (unmatchedPlatformFilter
     ? unmatched.filter((u) => u.platform === unmatchedPlatformFilter)
     : unmatched
@@ -829,7 +388,7 @@ export function ScraperAdmin() {
           <h1 className="text-foreground">Scraper Admin</h1>
           <div className="header-underline mt-1" />
           <p className="text-sm text-muted-foreground mt-1">
-            {TOTAL_STORES} LCB-licensed WA stores · Scrape any platform to discover and link menu data
+            Cron-driven scrapers run nightly 12:00–13:00 UTC against intel_stores (v2). Manual triggers available for testing.
           </p>
         </div>
         <button onClick={loadStats} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-accent text-muted-foreground transition-colors shrink-0">
@@ -848,9 +407,9 @@ export function ScraperAdmin() {
             {v === "platforms" ? "Platforms" : (
               <span className="flex items-center gap-1.5">
                 Unmatched
-                {unmatchedCount > 0 && (
+                {unmatched.length > 0 && (
                   <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-warning/20 text-warning text-[10px] font-bold">
-                    {unmatchedCount}
+                    {unmatched.length}
                   </span>
                 )}
               </span>
@@ -862,172 +421,100 @@ export function ScraperAdmin() {
       {/* ── PLATFORMS VIEW ── */}
       {activeView === "platforms" && (
         <>
-          {/* Scrape All */}
-          <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-            <div className="flex items-center justify-between gap-4">
+          {/* Top KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <KpiCard label="Total stores"      value={kpis?.total}      hint="v2 rows (post-swap)" />
+            <KpiCard label="Active"            value={kpis?.active}     hint={`${kpis?.inactive ?? 0} deactivated`} />
+            <KpiCard label="Designated"        value={kpis?.designated} hint={kpis ? `${Math.round((kpis.designated / Math.max(kpis.total, 1)) * 100)}% coverage` : ""} />
+            <KpiCard label="With menu data"    value={kpis?.withMenu}   hint="in dispensary_menus" />
+          </div>
+
+          {/* Cron Status strip */}
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <div className="flex items-baseline justify-between">
               <div>
-                <p className="text-sm font-semibold text-foreground">Scrape All Platforms</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Runs Dutchie → POSaBit → Leafly → Weedmaps sequentially</p>
+                <p className="text-sm font-semibold text-foreground">Cron schedule</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">5 scraper jobs run nightly, staggered 15 min apart starting 12:00 UTC.</p>
               </div>
-              {isScrapeAllRunning ? (
-                <button onClick={handleStopAll} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors shrink-0">
-                  <Square className="w-3.5 h-3.5" />Stop All
-                </button>
-              ) : (
-                <button onClick={handleScrapeAll} disabled={anyPlatformRunning} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0">
-                  <Layers className="w-3.5 h-3.5" />Scrape All Platforms
-                </button>
-              )}
+              <a
+                href="https://supabase.com/dashboard/project/dpglliwbgsdsofkjgaxj/integrations/cron/jobs"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                Supabase cron dashboard <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
-            {scrapeAll && (
-              <div className="space-y-2">
-                {isScrapeAllRunning && (
-                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full bg-primary animate-pulse transition-all" style={{ width: `${Math.round((scrapeAll.platformIdx / SCRAPE_ALL_PLATFORMS.length) * 100)}%`, minWidth: "8%" }} />
-                  </div>
-                )}
-                <div className="flex items-center justify-between gap-4">
-                  <p className="text-[11px] text-muted-foreground font-mono truncate">
-                    {scrapeAll.done ? (scrapeAll.error ? `⚠ ${scrapeAll.error}` : "✓ Complete") : scrapeAll.progressText}
-                  </p>
-                  {(scrapeAll.totalScraped > 0 || scrapeAll.totalProducts > 0) && (
-                    <p className="text-[11px] text-muted-foreground shrink-0">
-                      <span className="text-foreground font-semibold">{scrapeAll.totalScraped}</span> stores ·{" "}
-                      <span className="text-foreground font-semibold">{scrapeAll.totalProducts.toLocaleString()}</span> products
-                    </p>
-                  )}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+              {SCRAPERS.map((sc) => (
+                <div key={sc.id} className="rounded-md border border-border/70 bg-muted/20 p-2.5 flex flex-col gap-1">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium" style={{ color: sc.color }}>
+                    <Clock className="w-3 h-3" />{sc.label}
+                  </span>
+                  <span className="text-[10px] font-mono text-muted-foreground">{sc.scheduleLabel}</span>
+                  <span className="text-[10px] text-muted-foreground">last: <span className={stats[sc.id]?.lastScraped ? "text-foreground" : "text-muted-foreground/60"}>{formatFreshness(stats[sc.id]?.lastScraped ?? null)}</span></span>
                 </div>
-                <div className="flex items-center gap-2">
-                  {SCRAPE_ALL_PLATFORMS.map((p, i) => {
-                    const isDone = scrapeAll.done || i < scrapeAll.platformIdx;
-                    const isCurrent = !scrapeAll.done && i === scrapeAll.platformIdx && scrapeAll.running;
-                    return (
-                      <div key={p.id} className="flex items-center gap-1.5">
-                        <div className={`w-2 h-2 rounded-full transition-all ${isDone ? "opacity-100" : isCurrent ? "animate-pulse opacity-100" : "opacity-30"}`} style={{ background: p.color }} />
-                        <span className={`text-[10px] ${isCurrent ? "text-foreground font-medium" : isDone ? "text-muted-foreground" : "text-muted-foreground/50"}`}>{p.label}</span>
-                        {i < SCRAPE_ALL_PLATFORMS.length - 1 && <span className="text-muted-foreground/30 text-[10px]">→</span>}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+              ))}
+            </div>
           </div>
 
-          {/* How it works */}
-          <div className="rounded-lg px-4 py-3 text-[11px] text-muted-foreground leading-relaxed" style={{ background: "hsl(var(--primary) / 0.05)", border: "1px solid hsl(var(--primary) / 0.15)" }}>
-            <span className="font-semibold text-foreground">How scraping works: </span>
-            Phase 1 discovers all WA stores on that platform and matches them to LCB records. Unmatched stores are saved to the Unmatched tab for manual linking.
-            Phase 2 fetches menus in batches. If a store has fresh data (&lt;6h), the menu fetch is skipped but the platform slug is always saved.
-          </div>
-
-          {/* Platform grid */}
+          {/* Platform cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {PLATFORMS.map((platform) => (
-              <PlatformCard key={platform.id} platform={platform} stats={stats[platform.id] ?? null}
-                runStatus={runStatuses[platform.id]} logEntries={platformLogs[platform.id] ?? []}
-                onScrape={() => handleScrape(platform)} onStop={() => handleStop(platform.id)} />
+            {SCRAPERS.map((sc) => (
+              <ScraperCard
+                key={sc.id}
+                scraper={sc}
+                stats={stats[sc.id]}
+                totalStores={kpis?.total ?? 0}
+                manualActive={manualTriggering === sc.id}
+                manualResult={manualResult[sc.id]}
+                onManualTrigger={() => handleManualTrigger(sc)}
+                loading={loadingStats}
+              />
             ))}
           </div>
 
-          {/* Summary */}
-          <div className="rounded-lg border border-border bg-card p-4 grid grid-cols-3 gap-4 text-center">
-            <div>
-              <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                {Object.values(stats).reduce((s, p) => s + p.storesLinked, 0)}
-              </p>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Stores with menu data</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{TOTAL_STORES}</p>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Total LCB stores</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-foreground" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                {Object.values(stats).reduce((s, p) => s + p.productsScraped, 0).toLocaleString()}
-              </p>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Total products scraped</p>
-            </div>
-          </div>
-
-          {/* Website Finder */}
-          <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-muted-foreground" />
-                  Website Finder + POSaBit Detection
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  DuckDuckGo-searches each store without a website URL, saves the result, and auto-detects POSaBit menus.
-                  {wfTotal !== null && !wfRunning && (
-                    <span className="ml-1 text-warning">{wfTotal - wfDone > 0 ? `${wfTotal - wfDone} stores remaining` : "All stores have websites"}</span>
-                  )}
-                </p>
-              </div>
-              <button
-                onClick={handleFindWebsites}
-                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-colors shrink-0 ${
-                  wfRunning
-                    ? "border border-destructive/50 text-destructive hover:bg-destructive/10"
-                    : "text-primary-foreground bg-primary hover:bg-primary/90"
-                }`}
-              >
-                {wfRunning
-                  ? <><Square className="w-3.5 h-3.5" />Stop</>
-                  : <><Globe className="w-3.5 h-3.5" />Find Websites + POSaBit</>
-                }
-              </button>
-            </div>
-
-            {(wfRunning || wfProgress || wfLog.length > 0) && (
-              <div className="space-y-2">
-                {wfProgress && (
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="text-[11px] text-muted-foreground font-mono truncate">
-                      {wfRunning && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse mr-1.5 align-middle" />}
-                      {wfProgress}
-                    </p>
-                    {wfTotal !== null && wfDone > 0 && (
-                      <p className="text-[11px] text-muted-foreground shrink-0">
-                        <span className="text-foreground font-semibold">{wfDone}</span> / {wfTotal}
-                      </p>
-                    )}
-                  </div>
-                )}
-                {wfTotal !== null && wfDone > 0 && (
-                  <div className="h-1 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round((wfDone / wfTotal) * 100)}%` }} />
-                  </div>
-                )}
-                <ScrapeLog entries={wfLog} />
-              </div>
-            )}
+          {/* Weedmaps deprecated footer */}
+          <div className="rounded-lg border border-dashed border-muted-foreground/20 bg-muted/10 px-4 py-3 text-[11px] text-muted-foreground leading-relaxed">
+            <span className="font-semibold text-foreground/80">Weedmaps · discontinued after Stage 4 (2026-04-19).</span>{" "}
+            Historical data preserved in <code>intel_stores_archived</code> and <code>dispensary_menus</code>. 1 v2 store still carries a weedmaps designation from audit/40 detection — not actively scraped.
           </div>
         </>
       )}
 
       {/* ── UNMATCHED VIEW ── */}
       {activeView === "unmatched" && (
-        <div className="space-y-4">
-          {/* Controls */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <select
-              value={unmatchedPlatformFilter}
-              onChange={(e) => setUnmatchedPlatformFilter(e.target.value)}
-              className="px-2.5 py-1.5 rounded-md border border-border bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+        <div className="space-y-3">
+          {/* Platform filter */}
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className="text-[11px] text-muted-foreground mr-2">Filter:</span>
+            <button
+              onClick={() => setUnmatchedPlatformFilter("")}
+              className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${!unmatchedPlatformFilter ? "bg-primary text-primary-foreground" : "bg-muted/60 text-muted-foreground hover:bg-muted"}`}
             >
-              <option value="">All Platforms</option>
-              {Object.entries(PLATFORM_INFO).map(([key, pi]) => (
-                <option key={key} value={key}>{pi.label}</option>
-              ))}
-            </select>
-            <button onClick={loadUnmatched} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-accent text-muted-foreground transition-colors">
-              <RefreshCw className="w-3.5 h-3.5" />Refresh
+              All ({unmatched.length})
             </button>
-            <p className="text-sm text-muted-foreground ml-auto">
-              {unmatchedLoading ? "Loading…" : `${filteredUnmatched.length} unmatched store${filteredUnmatched.length !== 1 ? "s" : ""}`}
-            </p>
+            {Object.entries(PLATFORM_INFO).map(([plat, pi]) => {
+              const count = unmatched.filter((u) => u.platform === plat).length;
+              if (count === 0) return null;
+              return (
+                <button
+                  key={plat}
+                  onClick={() => setUnmatchedPlatformFilter(plat)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${unmatchedPlatformFilter === plat ? "text-primary-foreground" : "hover:bg-muted"}`}
+                  style={unmatchedPlatformFilter === plat
+                    ? { background: pi.color, color: "white" }
+                    : { background: pi.color + "22", color: pi.color }}
+                >
+                  {pi.label} ({count})
+                </button>
+              );
+            })}
+          </div>
+
+          {/* How-it-works blurb */}
+          <div className="rounded-lg px-4 py-3 text-[11px] text-muted-foreground leading-relaxed" style={{ background: "hsl(var(--primary) / 0.05)", border: "1px solid hsl(var(--primary) / 0.15)" }}>
+            <span className="font-semibold text-foreground">Unmatched discoveries</span> — stores a platform scraper found but couldn't match to an LCB-licensed intel_stores row. Link manually, then run a one-off scrape to confirm the match.
           </div>
 
           {/* Table */}
@@ -1037,7 +524,7 @@ export function ScraperAdmin() {
             ) : filteredUnmatched.length === 0 ? (
               <div className="py-12 text-center text-sm text-muted-foreground">
                 {unmatched.length === 0
-                  ? "No unmatched stores — run a discover phase first"
+                  ? "No unmatched stores — everything links cleanly right now"
                   : "No unmatched stores for this platform"}
               </div>
             ) : (
@@ -1063,46 +550,24 @@ export function ScraperAdmin() {
 
                     return (
                       <>
-                        <tr
-                          key={u.id}
-                          className={`transition-colors duration-100 ${isLinking ? "bg-accent/20" : linked ? "bg-success/5" : "hover:bg-accent/30"}`}
-                        >
-                          {/* Platform badge */}
+                        <tr key={u.id} className={`transition-colors duration-100 ${isLinking ? "bg-accent/20" : linked ? "bg-success/5" : "hover:bg-accent/30"}`}>
                           <td className="px-4 py-2.5">
                             {pi ? (
                               <span
                                 className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold"
                                 style={{ background: pi.color + "22", color: pi.color, border: `1px solid ${pi.color}66` }}
                                 title={pi.label}
-                              >
-                                {pi.letter}
-                              </span>
+                              >{pi.letter}</span>
                             ) : (
                               <span className="text-[10px] text-muted-foreground">{u.platform}</span>
                             )}
                           </td>
-
-                          {/* Store name */}
-                          <td className="px-4 py-2.5 font-medium text-foreground max-w-[180px] truncate">
-                            {u.store_name ?? "—"}
-                          </td>
-
-                          {/* City */}
-                          <td className="px-4 py-2.5 text-muted-foreground capitalize hidden md:table-cell">
-                            {(u.city ?? "").toLowerCase() || "—"}
-                          </td>
-
-                          {/* Address */}
-                          <td className="px-4 py-2.5 text-muted-foreground text-xs max-w-[160px] truncate hidden lg:table-cell">
-                            {u.address ?? "—"}
-                          </td>
-
-                          {/* Slug */}
+                          <td className="px-4 py-2.5 font-medium text-foreground max-w-[180px] truncate">{u.store_name ?? "—"}</td>
+                          <td className="px-4 py-2.5 text-muted-foreground capitalize hidden md:table-cell">{(u.city ?? "").toLowerCase() || "—"}</td>
+                          <td className="px-4 py-2.5 text-muted-foreground text-xs max-w-[160px] truncate hidden lg:table-cell">{u.address ?? "—"}</td>
                           <td className="px-4 py-2.5 hidden lg:table-cell">
                             <span className="text-[10px] font-mono text-muted-foreground">{u.platform_slug ?? "—"}</span>
                           </td>
-
-                          {/* Actions */}
                           <td className="px-4 py-2.5">
                             {linked ? (
                               <div className="flex items-center gap-2">
@@ -1121,11 +586,7 @@ export function ScraperAdmin() {
                                     className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-primary-foreground transition-colors disabled:opacity-50"
                                     style={{ background: pi?.color ?? "#666" }}
                                   >
-                                    {isScrapingThis ? (
-                                      <><RefreshCw className="w-2.5 h-2.5 animate-spin" />Scraping…</>
-                                    ) : (
-                                      <><Zap className="w-2.5 h-2.5" />Scrape Now</>
-                                    )}
+                                    {isScrapingThis ? (<><RefreshCw className="w-2.5 h-2.5 animate-spin" />Scraping…</>) : (<><Zap className="w-2.5 h-2.5" />Scrape Now</>)}
                                   </button>
                                 )}
                               </div>
@@ -1144,37 +605,21 @@ export function ScraperAdmin() {
                           </td>
                         </tr>
 
-                        {/* Inline linking panel */}
                         {isLinking && (
                           <tr key={`${u.id}-link`} className="bg-accent/10">
-                            <td colSpan={6} className="px-4 pb-4 pt-2">
-                              <div className="space-y-3">
-
-                                {/* Discovery info header */}
-                                <div className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2">
-                                  <p className="text-[10px] font-semibold uppercase tracking-widest text-warning/80 mb-1">Linking from {pi?.label ?? u.platform}</p>
-                                  <p className="text-[12px] font-semibold text-foreground">{u.store_name}</p>
-                                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                                    {u.address && <span className="text-[11px] text-muted-foreground">{u.address}{u.city ? `, ${u.city}` : ""}</span>}
-                                    {!u.address && u.city && <span className="text-[11px] text-muted-foreground">{u.city}</span>}
-                                    {u.phone && <span className="text-[11px] text-muted-foreground">· {u.phone}</span>}
-                                    {u.license_number && <span className="text-[11px] text-muted-foreground">· License #{u.license_number}</span>}
-                                  </div>
-                                </div>
-
-                                {/* Search input */}
-                                <div className="relative max-w-lg">
-                                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                            <td colSpan={6} className="px-4 py-3">
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-2">
+                                  <Search className="w-4 h-4 text-muted-foreground" />
                                   <input
-                                    autoFocus
+                                    type="text"
                                     value={linkQuery}
-                                    onChange={(e) => { setLinkQuery(e.target.value); setLinkSelected(null); }}
-                                    placeholder="Search intel store by name, city, address…"
-                                    className="w-full pl-7 pr-3 py-1.5 rounded-md border border-border bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                    onChange={(e) => setLinkQuery(e.target.value)}
+                                    placeholder="Search stores by name, city, or address…"
+                                    className="flex-1 bg-transparent text-[12px] focus:outline-none text-foreground placeholder:text-muted-foreground/60"
+                                    autoFocus
                                   />
                                 </div>
-
-                                {/* Results */}
                                 {linkResults.length > 0 && (
                                   <div className="rounded-md border border-border bg-card shadow-sm overflow-hidden max-w-lg divide-y divide-border/50">
                                     {linkResults.map((s) => {
@@ -1202,8 +647,6 @@ export function ScraperAdmin() {
                                 {linkQuery && linkResults.length === 0 && (
                                   <p className="text-[11px] text-muted-foreground">No matching stores found</p>
                                 )}
-
-                                {/* Confirm */}
                                 {linkSelected && (() => {
                                   const licNum = linkSelected.lcb_license_id ?? null;
                                   return (
@@ -1217,13 +660,9 @@ export function ScraperAdmin() {
                                       <button
                                         onClick={() => handleConfirmLink(u, linkSelected)}
                                         disabled={linkSaving}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium text-primary-foreground bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-40 transition-colors"
                                       >
-                                        {linkSaving ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
-                                        Confirm Link
-                                      </button>
-                                      <button onClick={handleCancelLink} className="text-[11px] text-muted-foreground hover:text-foreground">
-                                        Cancel
+                                        {linkSaving ? "Saving…" : "Confirm Link"}
                                       </button>
                                     </div>
                                   );
@@ -1240,15 +679,96 @@ export function ScraperAdmin() {
             )}
           </div>
 
-          {/* Recently linked this session */}
           {Object.keys(linkedRows).length > 0 && (
             <div className="text-[11px] text-muted-foreground">
               {Object.keys(linkedRows).length} store{Object.keys(linkedRows).length !== 1 ? "s" : ""} linked this session
-              {Object.values(scrapedIds).length > 0 && ` · ${scrapedIds.size} scraped`}
+              {scrapedIds.size > 0 && ` · ${scrapedIds.size} scraped`}
             </div>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Small subcomponents ─────────────────────────────────────────────────────
+
+function KpiCard({ label, value, hint }: { label: string; value: number | undefined; hint?: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-3">
+      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</p>
+      <p className="text-2xl font-bold text-foreground mt-1" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+        {value != null ? value.toLocaleString() : "—"}
+      </p>
+      {hint && <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p>}
+    </div>
+  );
+}
+
+function ScraperCard({
+  scraper, stats, totalStores, manualActive, manualResult, onManualTrigger, loading,
+}: {
+  scraper: Scraper;
+  stats: ScraperStats | undefined;
+  totalStores: number;
+  manualActive: boolean;
+  manualResult?: { ok: boolean; msg: string; at: number };
+  onManualTrigger: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card flex flex-col gap-4 p-5 shadow-sm" style={{ borderTop: `3px solid ${scraper.color}` }}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-bold text-foreground">{scraper.label}</h3>
+          <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{scraper.description}</p>
+        </div>
+        <div className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
+          <Clock className="w-3 h-3" />{scraper.scheduleLabel}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-2">
+        <StatTile value={stats?.designated} total={totalStores} label="Designated" color={scraper.color} loading={loading} />
+        <StatTile value={stats?.eligible} label="Eligible" color={scraper.color} loading={loading} />
+        <StatTile value={stats?.withMenu} label="With Menu" color={scraper.color} loading={loading} />
+        <StatTile value={stats?.products} label="Products" color={scraper.color} loading={loading} />
+      </div>
+
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>Last run: <span className={stats?.lastScraped ? "text-foreground" : "text-muted-foreground/60"}>{formatFreshness(stats?.lastScraped ?? null)}</span></span>
+        <button
+          onClick={onManualTrigger}
+          disabled={manualActive}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium border border-border hover:bg-accent text-muted-foreground transition-colors disabled:opacity-40"
+          title="Manually trigger this scraper's cron action — normal flow is the nightly schedule"
+        >
+          {manualActive ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+          Run now
+        </button>
+      </div>
+
+      {manualResult && (
+        <div className={`rounded-md border px-2.5 py-2 text-[10px] ${manualResult.ok ? "border-success/30 bg-success/5 text-success-foreground" : "border-destructive/30 bg-destructive/5 text-destructive"}`}>
+          <span className="inline-flex items-center gap-1 font-mono">
+            {manualResult.ok ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+            {manualResult.msg}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatTile({ value, total, label, color, loading }: { value: number | undefined; total?: number; label: string; color: string; loading: boolean }) {
+  return (
+    <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+      <p className="text-lg font-bold" style={{ fontFamily: "'JetBrains Mono', monospace", color }}>
+        {loading ? "…" : (value != null ? value.toLocaleString() : "—")}
+      </p>
+      <p className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">
+        {total != null ? `${label} / ${total}` : label}
+      </p>
     </div>
   );
 }

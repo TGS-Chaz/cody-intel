@@ -21,11 +21,20 @@ export interface IntelStore {
   posabit_feed_key: string | null;
   posabit_merchant: string | null;
   posabit_venue: string | null;
+  posabit_merchant_token?: string | null;
   jane_store_id: number | null;
+  joint_business_id?: string | null;
   status: string | null;
+  // Post-Phase-1j-Stage-6: v2 schema additions
+  designated_scraper?: "dutchie" | "jane" | "leafly" | "posabit" | "joint" | "weedmaps" | null;
+  primary_platform?: string | null;
+  is_active?: boolean;
+  has_online_menu?: boolean | null;
+  deactivated_reason?: string | null;
+  deactivated_at?: string | null;
   online_ordering_platform: string | null;
   menu_last_updated: string | null;
-  total_products: number;
+  total_products: number | null;
   crm_contact_id: string | null;
   org_id: string | null;
   created_at: string;

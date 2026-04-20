@@ -18,12 +18,23 @@ const PLATFORM_LABELS: Record<string, string> = {
   jane: "Jane",
 };
 
-// Badges: solid = has menu data, dashed outline = detected via slug only
-const PLATFORM_BADGES = [
-  { letter: "D", color: "hsl(var(--platform-dutchie))",  source: "dutchie-api",  slugField: "dutchie_slug"      as keyof IntelStore },
-  { letter: "L", color: "hsl(var(--platform-leafly))",   source: "leafly",        slugField: "leafly_slug"        as keyof IntelStore },
-  { letter: "P", color: "hsl(var(--platform-posabit))",  source: "posabit-api",   slugField: "posabit_feed_key"   as keyof IntelStore },
-  { letter: "W", color: "hsl(var(--platform-weedmaps))", source: "weedmaps",      slugField: "weedmaps_slug"      as keyof IntelStore },
+// Badges: solid = designated_scraper + has menu data, dashed outline = designated only or
+// slug-detected only. Sources post-Stage-6 use the short platform id in designated_scraper
+// (e.g. 'dutchie', 'jane') and the scraper-specific source string in dispensary_menus.source.
+interface PlatformBadge {
+  id: "dutchie" | "leafly" | "posabit" | "weedmaps" | "jane" | "joint";
+  letter: string;
+  color: string;
+  menuSources: string[];           // dispensary_menus.source values that count
+  slugField: keyof IntelStore | null;
+}
+const PLATFORM_BADGES: PlatformBadge[] = [
+  { id: "dutchie",  letter: "D", color: "hsl(var(--platform-dutchie))",  menuSources: ["dutchie-api"],           slugField: "dutchie_slug" },
+  { id: "jane",     letter: "J", color: "hsl(var(--platform-jane))",     menuSources: ["jane-embed","jane-algolia","jane"], slugField: "jane_store_id" as keyof IntelStore },
+  { id: "leafly",   letter: "L", color: "hsl(var(--platform-leafly))",   menuSources: ["leafly"],                slugField: "leafly_slug" },
+  { id: "posabit",  letter: "P", color: "hsl(var(--platform-posabit))",  menuSources: ["posabit-api","posabit"], slugField: "posabit_feed_key" },
+  { id: "joint",    letter: "N", color: "hsl(var(--platform-joint, 0 72% 50%))", menuSources: ["joint-api","joint"], slugField: "joint_business_id" as keyof IntelStore },
+  { id: "weedmaps", letter: "W", color: "hsl(var(--platform-weedmaps))", menuSources: ["weedmaps"],              slugField: "weedmaps_slug" },
 ];
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
@@ -477,9 +488,18 @@ export function StoreDirectory() {
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-1">
                           {(() => {
-                            const visible = PLATFORM_BADGES.filter(
-                              (cfg) => !!(menuMap[store.id] ?? []).includes(cfg.source) || !!store[cfg.slugField]
-                            );
+                            const rowSources = menuMap[store.id] ?? [];
+                            // A badge is visible if any of these is true:
+                            //   (1) designated_scraper matches this platform id (post-Stage-6 primary signal)
+                            //   (2) dispensary_menus has a row with a matching source
+                            //   (3) store has the platform-specific slug/id populated
+                            // The designated_scraper signal takes precedence — Stage 6 set this field
+                            // explicitly from platform_verification and Chaz's reviews.
+                            const visible = PLATFORM_BADGES.filter((cfg) => {
+                              if (store.designated_scraper === cfg.id) return true;
+                              if (cfg.menuSources.some(src => rowSources.includes(src))) return true;
+                              return cfg.slugField ? !!store[cfg.slugField] : false;
+                            });
                             if (visible.length === 0) {
                               return (
                                 <span className="flex items-center gap-1 text-[10px] text-muted-foreground/50">
@@ -488,13 +508,16 @@ export function StoreDirectory() {
                               );
                             }
                             return visible.map((cfg) => {
-                              const hasMenu = (menuMap[store.id] ?? []).includes(cfg.source);
+                              const isDesignated = store.designated_scraper === cfg.id;
+                              const hasMenu = cfg.menuSources.some(src => rowSources.includes(src));
+                              const solid = isDesignated || hasMenu;
+                              const tooltip = `${cfg.id.charAt(0).toUpperCase() + cfg.id.slice(1)}${isDesignated ? " (designated)" : ""}${hasMenu ? " · has menu" : ""}`;
                               return (
                                 <span
-                                  key={cfg.source}
-                                  title={PLATFORM_LABELS[cfg.source]}
+                                  key={cfg.id}
+                                  title={tooltip}
                                   className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold select-none"
-                                  style={hasMenu
+                                  style={solid
                                     ? { background: cfg.color + "22", color: cfg.color, border: `1px solid ${cfg.color}66` }
                                     : { background: "transparent", color: cfg.color + "88", border: `1px dashed ${cfg.color}44` }
                                   }
