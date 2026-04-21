@@ -105,47 +105,21 @@ function BrandReport() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data: menus } = await supabase
-        .from("dispensary_menus")
-        .select("id, intel_store_id")
-        .not("intel_store_id", "is", null);
-      if (!menus?.length) { setLoading(false); return; }
-
-      const menuToStore: Record<string, string> = {};
-      const validIds: string[] = [];
-      for (const m of menus) { menuToStore[m.id] = m.intel_store_id; validIds.push(m.id); }
-
-      const CHUNK = 400;
-      const allItems: { raw_brand: string; raw_price: number | null; dispensary_menu_id: string }[] = [];
-      for (let i = 0; i < validIds.length; i += CHUNK) {
-        const { data } = await supabase
-          .from("menu_items")
-          .select("raw_brand, raw_price, dispensary_menu_id")
-          .eq("is_on_menu", true)
-          .not("raw_brand", "is", null)
-          .in("dispensary_menu_id", validIds.slice(i, i + CHUNK));
-        if (data) allItems.push(...data);
-      }
-
-      const agg: Record<string, { stores: Set<string>; total: number; priceSum: number; priceCount: number }> = {};
-      for (const item of allItems) {
-        const b = item.raw_brand;
-        if (!b || isExcludedBrand(b)) continue;
-        if (!agg[b]) agg[b] = { stores: new Set(), total: 0, priceSum: 0, priceCount: 0 };
-        const storeId = menuToStore[item.dispensary_menu_id];
-        if (storeId) agg[b].stores.add(storeId);
-        agg[b].total++;
-        if (item.raw_price != null && item.raw_price > 0) { agg[b].priceSum += item.raw_price; agg[b].priceCount++; }
-      }
-
-      const sorted: BrandRow[] = Object.entries(agg)
-        .map(([brand, { stores, total, priceSum, priceCount }]) => ({
-          brand, store_count: stores.size, total_products: total,
-          avg_price: priceCount > 0 ? priceSum / priceCount : null,
+      // audit/48 P0 — server-side SECURITY DEFINER aggregate. Bypasses the
+      // 1000-row PostgREST cap + per-row RLS eval that truncated the old
+      // client-side .in([315 UUIDs]) fetch to ~3 stores per brand.
+      const { data, error } = await supabase.rpc("get_brand_report_rollup");
+      if (error || !data) { setRows([]); setLoading(false); return; }
+      const sorted: BrandRow[] = (data as { brand: string; store_count: number; total_products: number | string; avg_price: number | string | null }[])
+        .filter(r => r.brand && !isExcludedBrand(r.brand))
+        .map(r => ({
+          brand: r.brand,
+          store_count: Number(r.store_count) || 0,
+          total_products: Number(r.total_products) || 0,
+          avg_price: r.avg_price != null ? Number(r.avg_price) : null,
         }))
         .sort((a, b) => b.store_count - a.store_count)
         .slice(0, 50);
-
       setRows(sorted);
       setLoading(false);
     }
@@ -212,46 +186,19 @@ function CategoryReport() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data: menus } = await supabase
-        .from("dispensary_menus")
-        .select("id, intel_store_id")
-        .not("intel_store_id", "is", null);
-      if (!menus?.length) { setLoading(false); return; }
-
-      const menuToStore: Record<string, string> = {};
-      const validIds: string[] = [];
-      for (const m of menus) { menuToStore[m.id] = m.intel_store_id; validIds.push(m.id); }
-
-      const CHUNK = 400;
-      const allItems: { raw_category: string; raw_price: number | null; dispensary_menu_id: string }[] = [];
-      for (let i = 0; i < validIds.length; i += CHUNK) {
-        const { data } = await supabase
-          .from("menu_items")
-          .select("raw_category, raw_price, dispensary_menu_id")
-          .eq("is_on_menu", true)
-          .not("raw_category", "is", null)
-          .in("dispensary_menu_id", validIds.slice(i, i + CHUNK));
-        if (data) allItems.push(...data);
-      }
-
-      const agg: Record<string, { stores: Set<string>; count: number; priceSum: number; priceCount: number }> = {};
-      for (const item of allItems) {
-        const cat = item.raw_category;
-        if (!cat || isExcludedCategory(cat)) continue;
-        if (!agg[cat]) agg[cat] = { stores: new Set(), count: 0, priceSum: 0, priceCount: 0 };
-        const storeId = menuToStore[item.dispensary_menu_id];
-        if (storeId) agg[cat].stores.add(storeId);
-        agg[cat].count++;
-        if (item.raw_price != null && item.raw_price > 0) { agg[cat].priceSum += item.raw_price; agg[cat].priceCount++; }
-      }
-
-      const sorted: CategoryRow[] = Object.entries(agg)
-        .map(([category, { stores, count, priceSum, priceCount }]) => ({
-          category, product_count: count, store_count: stores.size,
-          avg_price: priceCount > 0 ? priceSum / priceCount : null,
+      // audit/48 P0 — server-side aggregate (see get_brand_report_rollup
+      // notes). Eliminates client-side chunking and the 1000-row cap.
+      const { data, error } = await supabase.rpc("get_category_report_rollup");
+      if (error || !data) { setRows([]); setLoading(false); return; }
+      const sorted: CategoryRow[] = (data as { category: string; product_count: number | string; store_count: number; avg_price: number | string | null }[])
+        .filter(r => r.category && !isExcludedCategory(r.category))
+        .map(r => ({
+          category: r.category,
+          product_count: Number(r.product_count) || 0,
+          store_count: Number(r.store_count) || 0,
+          avg_price: r.avg_price != null ? Number(r.avg_price) : null,
         }))
         .sort((a, b) => b.product_count - a.product_count);
-
       setRows(sorted);
       setLoading(false);
     }
@@ -506,18 +453,18 @@ function PriceReport() {
     async function load() {
       setLoading(true);
 
-      // Load own brands + store list in parallel with menus
-      const [menusRes, userBrandsRes, storesRes] = await Promise.all([
-        supabase.from("dispensary_menus").select("id, intel_store_id").not("intel_store_id", "is", null),
+      // Load own brands + store list + price rollup in parallel. menus list
+      // is no longer fetched — the RPC does the menus→stores join server-side.
+      const [userBrandsRes, storesRes, rollupRes] = await Promise.all([
         supabase.from("user_brands").select("brand_name").eq("is_own_brand", true),
         supabase.from("intel_stores").select("id, name, city, crm_contact_id")
           .eq("is_active", true)
           .not("crm_contact_id", "is", null)
           .order("name")
           .limit(300),
+        supabase.rpc("get_price_report_rollup"),
       ]);
 
-      const menus = menusRes.data ?? [];
       let ownNamesArr = (userBrandsRes.data ?? []).map((b: any) => b.brand_name.toLowerCase());
       // Fallback: if user hasn't configured user_brands, use market_brands flags
       if (!ownNamesArr.length) {
@@ -528,63 +475,32 @@ function PriceReport() {
       setOwnBrandNames(ownNames);
       setStores(storesRes.data ?? []);
 
-      if (!menus.length) { setLoading(false); return; }
+      // audit/48 P0 — single RPC returns both per-category price stats and
+      // per-brand × category price + store counts, discriminated by `kind`.
+      const { data: rollup, error } = rollupRes;
+      if (error || !rollup) { setRows([]); setBrandPriceRows([]); setLoading(false); return; }
 
-      const validIds = menus.map(m => m.id);
-      const menuToStore: Record<string, string> = {};
-      for (const m of menus) menuToStore[m.id] = m.intel_store_id;
+      type PriceRollupRow = {
+        kind: "category" | "brand_category";
+        category: string | null;
+        brand: string | null;
+        avg_price: number | string | null;
+        min_price: number | string | null;
+        max_price: number | string | null;
+        price_count: number | string | null;
+        store_count: number | null;
+      };
+      const rows_: PriceRollupRow[] = rollup as PriceRollupRow[];
 
-      const CHUNK = 400;
-      const catAgg: Record<string, { prices: number[] }> = {};
-      // For brand price table: brand+category → { prices, stores }
-      const brandCatAgg: Record<string, { prices: number[]; stores: Set<string>; isOwn: boolean }> = {};
-
-      for (let i = 0; i < validIds.length; i += CHUNK) {
-        const { data } = await supabase
-          .from("menu_items")
-          .select("raw_category, raw_price, raw_brand, dispensary_menu_id")
-          .eq("is_on_menu", true)
-          .not("raw_category", "is", null)
-          .not("raw_price", "is", null)
-          .gt("raw_price", 0)
-          .in("dispensary_menu_id", validIds.slice(i, i + CHUNK));
-        if (data) {
-          for (const item of data) {
-            const cat = item.raw_category;
-            const brand = item.raw_brand;
-            if (!cat || item.raw_price == null || isExcludedCategory(cat)) continue;
-            if (brand && isExcludedBrand(brand)) continue;
-
-            // Category aggregation (existing)
-            if (!catAgg[cat]) catAgg[cat] = { prices: [] };
-            catAgg[cat].prices.push(item.raw_price);
-
-            // Brand+category aggregation (new)
-            if (brand) {
-              const key = `${brand}|||${cat}`;
-              if (!brandCatAgg[key]) {
-                brandCatAgg[key] = {
-                  prices: [],
-                  stores: new Set(),
-                  isOwn: ownNames.has(brand.toLowerCase()),
-                };
-              }
-              brandCatAgg[key].prices.push(item.raw_price);
-              const storeId = menuToStore[item.dispensary_menu_id];
-              if (storeId) brandCatAgg[key].stores.add(storeId);
-            }
-          }
-        }
-      }
-
-      const sorted: PriceRow[] = Object.entries(catAgg)
-        .filter(([, { prices }]) => prices.length >= 5)
-        .map(([category, { prices }]) => ({
-          category,
-          avg: prices.reduce((s, v) => s + v, 0) / prices.length,
-          min: Math.min(...prices),
-          max: Math.max(...prices),
-          count: prices.length,
+      // (1) Per-category — keep categories with >= 5 data points.
+      const sorted: PriceRow[] = rows_
+        .filter(r => r.kind === "category" && r.category && !isExcludedCategory(r.category) && Number(r.price_count ?? 0) >= 5)
+        .map(r => ({
+          category: r.category as string,
+          avg: Number(r.avg_price) || 0,
+          min: Number(r.min_price) || 0,
+          max: Number(r.max_price) || 0,
+          count: Number(r.price_count) || 0,
         }))
         .sort((a, b) => b.avg - a.avg);
 
@@ -594,14 +510,23 @@ function PriceReport() {
       for (const r of sorted) mktAvg[r.category] = r.avg;
       setMarketAvgByCategory(mktAvg);
 
-      // Build brand price rows — only show own brands + a sample of others (top 5 per category)
-      const allBrandRows: BrandPriceRow[] = Object.entries(brandCatAgg)
-        .filter(([, { prices }]) => prices.length >= 3)
-        .map(([key, { prices, stores, isOwn }]) => {
-          const [brand, category] = key.split("|||");
-          const avgPrice = prices.reduce((s, v) => s + v, 0) / prices.length;
+      // (2) Per-brand × category — keep rows with >= 3 data points.
+      const allBrandRows: BrandPriceRow[] = rows_
+        .filter(r => r.kind === "brand_category" && r.brand && r.category && Number(r.price_count ?? 0) >= 3)
+        .filter(r => !isExcludedCategory(r.category as string) && !isExcludedBrand(r.brand as string))
+        .map(r => {
+          const brand = r.brand as string;
+          const category = r.category as string;
+          const avgPrice = Number(r.avg_price) || 0;
           const mkt = mktAvg[category] ?? 0;
-          return { brand, category, avgPrice, vsMarket: avgPrice - mkt, storeCount: stores.size, isOwn };
+          return {
+            brand,
+            category,
+            avgPrice,
+            vsMarket: avgPrice - mkt,
+            storeCount: Number(r.store_count) || 0,
+            isOwn: ownNames.has(brand.toLowerCase()),
+          };
         });
 
       // Keep all own brand rows + filter to make the table manageable
@@ -1102,44 +1027,20 @@ function BrandDistribution() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data: menus } = await supabase
-        .from("dispensary_menus")
-        .select("id, intel_store_id")
-        .not("intel_store_id", "is", null);
-      if (!menus?.length) { setLoading(false); return; }
-
-      const menuToStore: Record<string, string> = {};
-      const validIds: string[] = [];
-      for (const m of menus) { menuToStore[m.id] = m.intel_store_id; validIds.push(m.id); }
-
-      const CHUNK = 400;
-      const agg: Record<string, { stores: Set<string>; total: number }> = {};
-
-      for (let i = 0; i < validIds.length; i += CHUNK) {
-        const { data } = await supabase
-          .from("menu_items")
-          .select("raw_brand, dispensary_menu_id")
-          .eq("is_on_menu", true)
-          .not("raw_brand", "is", null)
-          .in("dispensary_menu_id", validIds.slice(i, i + CHUNK));
-        if (data) {
-          for (const item of data) {
-            const b = item.raw_brand;
-            if (!b || isExcludedBrand(b)) continue;
-            if (!agg[b]) agg[b] = { stores: new Set(), total: 0 };
-            const storeId = menuToStore[item.dispensary_menu_id];
-            if (storeId) agg[b].stores.add(storeId);
-            agg[b].total++;
-          }
-        }
-      }
-
-      const rows: BrandRow[] = Object.entries(agg)
-        .map(([brand, { stores, total }]) => ({
-          brand, store_count: stores.size, total_products: total, avg_price: null,
+      // audit/48 P0 — server-side aggregate. See get_brand_report_rollup
+      // notes; this RPC is the no-avg_price variant used for the full-brand
+      // distribution histogram (not just top 50).
+      const { data, error } = await supabase.rpc("get_brand_distribution_rollup");
+      if (error || !data) { setAll([]); setLoading(false); return; }
+      const rows: BrandRow[] = (data as { brand: string; store_count: number; total_products: number | string }[])
+        .filter(r => r.brand && !isExcludedBrand(r.brand))
+        .map(r => ({
+          brand: r.brand,
+          store_count: Number(r.store_count) || 0,
+          total_products: Number(r.total_products) || 0,
+          avg_price: null,
         }))
         .sort((a, b) => b.store_count - a.store_count);
-
       setAll(rows);
       setLoading(false);
     }
