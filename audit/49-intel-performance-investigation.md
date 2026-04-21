@@ -207,3 +207,61 @@ Given the severity (4+ min loads → users thinking the app is down), recommend 
 - P1 (Dashboard RPC port + MVs) fixes the Dashboard map stall, which is the *other* top complaint.
 
 P0 is a ~10-minute migration. P1 is ~2-3 hours. Both can land the same day.
+
+---
+
+## Completion notes — P0 + P1 shipped 2026-04-20
+
+### Migrations applied (10 total, via `supabase db push`)
+
+- `20260420250000..20260420250300` — 3 `CREATE INDEX CONCURRENTLY` on `menu_items` + `ANALYZE`. **Had to be split one-per-file** because Supabase's pgx driver pipelines statements within a single migration file and `CREATE INDEX CONCURRENTLY cannot be executed within a pipeline (SQLSTATE 25001)`. Worth remembering for future concurrent-index migrations.
+- `20260420260000..20260420290000` — 4 materialized views (`mv_brand_report`, `mv_category_report`, `mv_price_report`, `mv_brand_distribution`) with unique + ORDER-BY indexes.
+- `20260420300000` — `refresh_all_report_rollups()` function + pg_cron schedule at `0 5 * * *` UTC.
+- `20260420310000` — `DROP + CREATE` the 4 Report RPCs to SELECT from their MVs instead of live-aggregating.
+- `20260420320000` — `get_market_brand_rollup(p_intel_store_ids uuid[], p_limit int)` and `get_brand_union_store_count(p_brand_names text[])` for Dashboard Phase-2.
+
+### Measured before vs after (cold, anon JWT via direct PostgREST)
+
+| RPC                                       | Before (P0 only) | After (P1b MV-backed) | Speedup |
+|-------------------------------------------|-----------------:|-----------------------:|--------:|
+| `get_brand_report_rollup`                 | 6 269 ms         | **375 ms**             | 17×     |
+| `get_category_report_rollup`              | 5 171 ms         | **140 ms**             | 37×     |
+| `get_price_report_rollup`                 | 11 362 ms        | **219 ms**             | 52×     |
+| `get_brand_distribution_rollup`           | 5 218 ms         | **144 ms**             | 36×     |
+| `get_market_brand_rollup` (MV path, new)  | —                | **152 ms**             | —       |
+| `get_brand_union_store_count` (new)       | —                | 3 142 ms               | see note|
+
+**Note on `get_brand_union_store_count`**: still live-aggregates over `menu_items` (one-off Dashboard call). Runs once per Dashboard load, so 3 s is tolerable. The `= ANY(subquery)` pattern didn't land on the P0 expression index as cleanly as hoped — the planner falls back to a semi-join scan. If it becomes a complaint, materialize it alongside the other rollups.
+
+**Note on P0 alone**: P0 indexes shipped first and gave ~20% improvement (6.3 s → 8.6 s actually — initial run was possibly hit by a cold cache + the `ANALYZE` having not yet landed). P0 was not sufficient on its own; the `COUNT(DISTINCT intel_store_id)` hash build over the 1M+ filtered rows dominated, not the filter cost. **The materialized views are what unlock the sub-second numbers.** P0 is still useful — it speeds up the live path in `get_market_brand_rollup` (the `p_intel_store_ids` filter branch) and `get_brand_union_store_count`, both of which cannot use the MVs.
+
+### Data correctness preserved
+
+Post-P1 top-5 brands (from `get_brand_report_rollup`, read from `mv_brand_report`):
+
+| Rank | Brand            | Stores | Products |
+|-----:|------------------|-------:|---------:|
+|    1 | Wyld             |    247 |    6 933 |
+|    2 | Ray's Lemonade   |    246 |    8 183 |
+|    3 | Phat Panda       |    241 |   33 183 |
+|    4 | **Green Revolution** | **237** |  7 852 |
+|    5 | Mfused           |    224 |   11 323 |
+
+Matches the pre-P1 results exactly (same MV contents as the live aggregate).
+
+### Frontend changes
+
+- `src/pages/Dashboard.tsx` Phase-2 — removed the `.in([315 menu UUIDs])` chunked fetch, replaced with three parallel RPC calls (`get_market_brand_rollup`, `get_brand_union_store_count`, per-own-brand `get_brand_store_count`). Client-side `isExcludedBrand` filter stays — `src/lib/analytics-filters.ts` remains the single source of truth for the exclusion list.
+- Reports page (`src/pages/Reports.tsx`) — no change needed. The 4 RPCs have identical signatures/return types post-P1b.
+
+### Scheduled refresh
+
+`SELECT cron.schedule('cody-refresh-report-rollups', '0 5 * * *', $$ SELECT refresh_all_report_rollups() $$)`. Runs ~7h before the 12:00–13:00 UTC scraper window, so reports are always fresh before users start their day. Staleness window: up to ~24h for the first few hours of the day before 05:00 refresh, settling to ~18h max immediately after the daily scrape batch. Acceptable for market-intel use case.
+
+Manual refresh path: `SELECT refresh_all_report_rollups();` from the SQL editor. Each REFRESH is wrapped in a `BEGIN…EXCEPTION` block so a single MV failure does not abort the others.
+
+### Deferred (from the original ranked plan)
+
+- **P2** — Reports → Gap `.range()` loop. Still broken. Tab hangs. Track as next-up task.
+- **P3** — DashboardMap `menu_snapshots` JSONB narrowing. Still slow. Dashboard map render remains the biggest non-Reports stall.
+- **Pool tuning** — not needed. Per-query latency fix (this PR) eliminated the long pool-slot hold times; pool starvation was a downstream symptom, not a cause.

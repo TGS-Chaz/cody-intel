@@ -294,78 +294,43 @@ export function Dashboard() {
     async function loadHeavy() {
       setHeavyLoading(true);
 
-      // Get all menu IDs + store mapping for market pulse
-      const { data: menus } = await supabase
-        .from("dispensary_menus")
-        .select("id, intel_store_id")
-        .not("intel_store_id", "is", null);
+      // audit/49 P1a — server-side aggregates. Replaces the chunked
+      // .in([~315 menu_ids]) client fetch over 1.275M menu_items (which
+      // PostgREST capped at 1000 rows and hit the authenticated 8s timeout).
+      // Client-side isExcludedBrand filter stays in JS so analytics-filters.ts
+      // remains the single source of truth for the exclusion list.
+      const ownBrands = userBrands.filter((b) => b.is_own_brand);
+      const ownBrandNames = ownBrands.map((b) => b.brand_name);
 
-      const menuToStore: Record<string, string> = {};
-      const validMenuIds: string[] = [];
-      for (const m of menus ?? []) {
-        menuToStore[m.id] = m.intel_store_id;
-        validMenuIds.push(m.id);
-      }
+      const [marketRes, unionRes, presencePairs] = await Promise.all([
+        // Top market brands. Reads from mv_brand_report (~100ms).
+        supabase.rpc("get_market_brand_rollup", { p_limit: 12 }),
+        // Total distinct stores carrying any own brand.
+        ownBrandNames.length
+          ? supabase.rpc("get_brand_union_store_count", { p_brand_names: ownBrandNames })
+          : Promise.resolve({ data: 0, error: null }),
+        // One RPC per own brand for its individual presence count.
+        ownBrands.length
+          ? Promise.all(
+              ownBrands.map(async (b) => {
+                const { data, error } = await supabase.rpc("get_brand_store_count", {
+                  brand_name: b.brand_name,
+                });
+                if (error) return { brand_name: b.brand_name, store_count: 0 };
+                return { brand_name: b.brand_name, store_count: (data as number) ?? 0 };
+              })
+            )
+          : Promise.resolve([] as BrandPresence[]),
+      ]);
 
-      // Chunked menu_items load (chunks of 400 menu IDs)
-      const CHUNK = 400;
-      const allItems: { raw_brand: string | null; dispensary_menu_id: string }[] = [];
-      for (let i = 0; i < validMenuIds.length; i += CHUNK) {
-        const { data } = await supabase
-          .from("menu_items")
-          .select("raw_brand, dispensary_menu_id")
-          .eq("is_on_menu", true)
-          .in("dispensary_menu_id", validMenuIds.slice(i, i + CHUNK));
-        if (data) allItems.push(...data);
-      }
-
-      // Brand → stores aggregation (for market pulse)
-      const brandStores: Record<string, Set<string>> = {};
-      const brandProducts: Record<string, number> = {};
-      for (const item of allItems) {
-        const b = item.raw_brand?.trim();
-        if (!b || isExcludedBrand(b)) continue;
-        if (!brandStores[b]) { brandStores[b] = new Set(); brandProducts[b] = 0; }
-        const sid = menuToStore[item.dispensary_menu_id];
-        if (sid) brandStores[b].add(sid);
-        brandProducts[b]++;
-      }
-      const marketBrands: MarketBrand[] = Object.entries(brandStores)
-        .map(([brand, stores]) => ({ brand, store_count: stores.size, product_count: brandProducts[brand] }))
-        .sort((a, b) => b.store_count - a.store_count)
+      const marketBrands: MarketBrand[] = (marketRes.data as MarketBrand[] ?? [])
+        .filter((r) => !isExcludedBrand(r.brand))
         .slice(0, 8);
 
-      // Brand presence: for each own brand, count distinct stores via menu_items
-      const ownBrands = userBrands.filter((b) => b.is_own_brand);
-      let brandPresence: BrandPresence[] = [];
-      let ownBrandStoreTotal = 0;
-
-      if (ownBrands.length > 0 && validMenuIds.length > 0) {
-        // One RPC call per own-brand. Replaces the chunked 14KB-URL query that
-        // was blowing past PostgREST's URL-length cap on 130+ menu_ids.
-        const presenceResults = await Promise.all(
-          ownBrands.map(async (b) => {
-            const { data, error } = await supabase.rpc("get_brand_store_count", {
-              brand_name: b.brand_name,
-            });
-            if (error) return { brand_name: b.brand_name, store_count: 0 };
-            return { brand_name: b.brand_name, store_count: (data as number) ?? 0 };
-          })
-        );
-        brandPresence = presenceResults.sort((a, b) => b.store_count - a.store_count);
-        // Total unique stores carrying any own brand
-        const allOwnStores = new Set<string>();
-        for (const item of allItems) {
-          const b = item.raw_brand?.trim().toLowerCase();
-          if (!b) continue;
-          const match = ownBrands.find((ob) => ob.brand_name.toLowerCase() === b);
-          if (match) {
-            const sid = menuToStore[item.dispensary_menu_id];
-            if (sid) allOwnStores.add(sid);
-          }
-        }
-        ownBrandStoreTotal = allOwnStores.size;
-      }
+      const ownBrandStoreTotal = (unionRes.data as number) ?? 0;
+      const brandPresence: BrandPresence[] = presencePairs.sort(
+        (a, b) => b.store_count - a.store_count,
+      );
 
       // Snapshot date from daily_brand_metrics
       const { data: snapData } = await supabase
