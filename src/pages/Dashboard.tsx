@@ -248,41 +248,54 @@ export function Dashboard() {
   const [heavyLoading, setHeavyLoading] = useState(true);
 
   // ── Phase 1: fast queries ──────────────────────────────────────────────────
+  // audit/50 — try/finally guarantees setFastLoading(false) even if any fetch
+  // throws (e.g. Supabase 521/503 during an infrastructure incident). Without
+  // this, a transient outage leaves every Phase-1 widget in skeleton forever
+  // because the error propagates and the setter never runs. Every async data
+  // loader in the dashboard tree needs the same pattern.
   const loadFast = useCallback(async () => {
-    const [storesRes, storesWithMenuRes, alertsRes, topStoresRes, recentAlertsRes] = await Promise.all([
-      supabase.from("intel_stores").select("id", { count: "exact", head: true }).eq("is_active", true),
-      supabase.from("intel_stores").select("id", { count: "exact", head: true }).eq("is_active", true).not("total_products", "is", null).gt("total_products", 0),
-      supabase.from("intel_alerts").select("id", { count: "exact", head: true }).eq("is_read", false),
-      supabase.from("intel_stores").select("id, name, city, total_products, menu_last_updated").eq("is_active", true).order("total_products", { ascending: false }).limit(5),
-      supabase.from("intel_alerts").select("id, title, severity, alert_type, brand_name, created_at").order("created_at", { ascending: false }).limit(8),
-    ]);
+    try {
+      const [storesRes, storesWithMenuRes, alertsRes, topStoresRes, recentAlertsRes] = await Promise.all([
+        supabase.from("intel_stores").select("id", { count: "exact", head: true }).eq("is_active", true),
+        supabase.from("intel_stores").select("id", { count: "exact", head: true }).eq("is_active", true).not("total_products", "is", null).gt("total_products", 0),
+        supabase.from("intel_alerts").select("id", { count: "exact", head: true }).eq("is_read", false),
+        supabase.from("intel_stores").select("id, name, city, total_products, menu_last_updated").eq("is_active", true).order("total_products", { ascending: false }).limit(5),
+        supabase.from("intel_alerts").select("id, title, severity, alert_type, brand_name, created_at").order("created_at", { ascending: false }).limit(8),
+      ]);
 
-    // Also fetch user_brands and freshness
-    const [brandsRes, freshRes, normRunRes] = await Promise.all([
-      orgId
-        ? supabase.from("user_brands").select("id, brand_name, is_own_brand").eq("org_id", orgId)
-        : Promise.resolve({ data: [] as UserBrand[], error: null }),
-      supabase.from("intel_stores").select("menu_last_updated").not("menu_last_updated", "is", null).order("menu_last_updated", { ascending: false }).limit(1),
-      supabase.from("normalization_runs").select("items_processed, items_normalized, items_needing_review").order("run_at", { ascending: false }).limit(1),
-    ]);
+      const [brandsRes, freshRes, normRunRes] = await Promise.all([
+        orgId
+          ? supabase.from("user_brands").select("id, brand_name, is_own_brand").eq("org_id", orgId)
+          : Promise.resolve({ data: [] as UserBrand[], error: null }),
+        supabase.from("intel_stores").select("menu_last_updated").not("menu_last_updated", "is", null).order("menu_last_updated", { ascending: false }).limit(1),
+        supabase.from("normalization_runs").select("items_processed, items_normalized, items_needing_review").order("run_at", { ascending: false }).limit(1),
+      ]);
 
-    setUserBrands((brandsRes.data as UserBrand[]) ?? []);
+      setUserBrands((brandsRes.data as UserBrand[]) ?? []);
 
-    const normRow = normRunRes.data?.[0] ?? null;
-    setFast({
-      totalStores: storesRes.count ?? 0,
-      storesWithMenus: storesWithMenuRes.count ?? 0,
-      alertCount: alertsRes.count ?? 0,
-      topStores: (topStoresRes.data ?? []) as FastStats["topStores"],
-      recentAlerts: (recentAlertsRes.data ?? []) as FastStats["recentAlerts"],
-      freshness: (freshRes.data?.[0]?.menu_last_updated as string | null) ?? null,
-      normStats: normRow ? {
-        processed: normRow.items_processed ?? 0,
-        normalized: normRow.items_normalized ?? 0,
-        needsReview: normRow.items_needing_review ?? 0,
-      } : null,
-    });
-    setFastLoading(false);
+      const normRow = normRunRes.data?.[0] ?? null;
+      setFast({
+        totalStores: storesRes.count ?? 0,
+        storesWithMenus: storesWithMenuRes.count ?? 0,
+        alertCount: alertsRes.count ?? 0,
+        topStores: (topStoresRes.data ?? []) as FastStats["topStores"],
+        recentAlerts: (recentAlertsRes.data ?? []) as FastStats["recentAlerts"],
+        freshness: (freshRes.data?.[0]?.menu_last_updated as string | null) ?? null,
+        normStats: normRow ? {
+          processed: normRow.items_processed ?? 0,
+          normalized: normRow.items_normalized ?? 0,
+          needsReview: normRow.items_needing_review ?? 0,
+        } : null,
+      });
+    } catch (err) {
+      console.error("Dashboard loadFast failed:", err);
+      setFast({
+        totalStores: 0, storesWithMenus: 0, alertCount: 0,
+        topStores: [], recentAlerts: [], freshness: null, normStats: null,
+      });
+    } finally {
+      setFastLoading(false);
+    }
   }, [orgId]);
 
   useEffect(() => { loadFast(); }, [loadFast]);
@@ -297,51 +310,53 @@ export function Dashboard() {
       // audit/49 P1a — server-side aggregates. Replaces the chunked
       // .in([~315 menu_ids]) client fetch over 1.275M menu_items (which
       // PostgREST capped at 1000 rows and hit the authenticated 8s timeout).
-      // Client-side isExcludedBrand filter stays in JS so analytics-filters.ts
-      // remains the single source of truth for the exclusion list.
-      const ownBrands = userBrands.filter((b) => b.is_own_brand);
-      const ownBrandNames = ownBrands.map((b) => b.brand_name);
+      // audit/50 — wrapped in try/catch/finally so a transient Supabase
+      // 521/503 incident doesn't leave widgets in skeleton forever.
+      try {
+        const ownBrands = userBrands.filter((b) => b.is_own_brand);
+        const ownBrandNames = ownBrands.map((b) => b.brand_name);
 
-      const [marketRes, unionRes, presencePairs] = await Promise.all([
-        // Top market brands. Reads from mv_brand_report (~100ms).
-        supabase.rpc("get_market_brand_rollup", { p_limit: 12 }),
-        // Total distinct stores carrying any own brand.
-        ownBrandNames.length
-          ? supabase.rpc("get_brand_union_store_count", { p_brand_names: ownBrandNames })
-          : Promise.resolve({ data: 0, error: null }),
-        // One RPC per own brand for its individual presence count.
-        ownBrands.length
-          ? Promise.all(
-              ownBrands.map(async (b) => {
-                const { data, error } = await supabase.rpc("get_brand_store_count", {
-                  brand_name: b.brand_name,
-                });
-                if (error) return { brand_name: b.brand_name, store_count: 0 };
-                return { brand_name: b.brand_name, store_count: (data as number) ?? 0 };
-              })
-            )
-          : Promise.resolve([] as BrandPresence[]),
-      ]);
+        const [marketRes, unionRes, presencePairs] = await Promise.all([
+          supabase.rpc("get_market_brand_rollup", { p_limit: 12 }),
+          ownBrandNames.length
+            ? supabase.rpc("get_brand_union_store_count", { p_brand_names: ownBrandNames })
+            : Promise.resolve({ data: 0, error: null }),
+          ownBrands.length
+            ? Promise.all(
+                ownBrands.map(async (b) => {
+                  const { data, error } = await supabase.rpc("get_brand_store_count", {
+                    brand_name: b.brand_name,
+                  });
+                  if (error) return { brand_name: b.brand_name, store_count: 0 };
+                  return { brand_name: b.brand_name, store_count: (data as number) ?? 0 };
+                })
+              )
+            : Promise.resolve([] as BrandPresence[]),
+        ]);
 
-      const marketBrands: MarketBrand[] = (marketRes.data as MarketBrand[] ?? [])
-        .filter((r) => !isExcludedBrand(r.brand))
-        .slice(0, 8);
+        const marketBrands: MarketBrand[] = (marketRes.data as MarketBrand[] ?? [])
+          .filter((r) => !isExcludedBrand(r.brand))
+          .slice(0, 8);
 
-      const ownBrandStoreTotal = (unionRes.data as number) ?? 0;
-      const brandPresence: BrandPresence[] = presencePairs.sort(
-        (a, b) => b.store_count - a.store_count,
-      );
+        const ownBrandStoreTotal = (unionRes.data as number) ?? 0;
+        const brandPresence: BrandPresence[] = presencePairs.sort(
+          (a, b) => b.store_count - a.store_count,
+        );
 
-      // Snapshot date from daily_brand_metrics
-      const { data: snapData } = await supabase
-        .from("daily_brand_metrics")
-        .select("date")
-        .order("date", { ascending: false })
-        .limit(1);
-      const snapshotDate: string | null = snapData?.[0]?.date ?? null;
+        const { data: snapData } = await supabase
+          .from("daily_brand_metrics")
+          .select("date")
+          .order("date", { ascending: false })
+          .limit(1);
+        const snapshotDate: string | null = snapData?.[0]?.date ?? null;
 
-      setHeavy({ brandPresence, ownBrandStoreTotal, marketBrands, snapshotDate });
-      setHeavyLoading(false);
+        setHeavy({ brandPresence, ownBrandStoreTotal, marketBrands, snapshotDate });
+      } catch (err) {
+        console.error("Dashboard loadHeavy failed:", err);
+        setHeavy({ brandPresence: [], ownBrandStoreTotal: 0, marketBrands: [], snapshotDate: null });
+      } finally {
+        setHeavyLoading(false);
+      }
     }
 
     loadHeavy();

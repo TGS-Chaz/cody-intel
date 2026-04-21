@@ -58,6 +58,10 @@ export function DashboardMap() {
       // so 'SuperNova' correctly maps to Sungaze, etc. The old path read
       // user_brands directly and missed every aliased brand, collapsing
       // the map to ~4 green pins instead of 61.
+      //
+      // audit/50 — try/catch/finally so a transient Supabase 521/503
+      // doesn't leave the map in skeleton forever.
+      try {
       const [storesRes, brandsRes, aliasesRes, myStoresRes, snapsRes] = await Promise.all([
         supabase
           .from("intel_stores")
@@ -149,7 +153,14 @@ export function DashboardMap() {
       }
 
       setPins(result);
-      setLoading(false);
+      } catch (err) {
+        if (!cancelled) {
+          console.error("DashboardMap load failed:", err);
+          setPins([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
 
     load();
