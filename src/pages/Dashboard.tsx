@@ -55,6 +55,9 @@ interface HeavyStats {
   ownBrandStoreTotal: number;
   marketBrands: MarketBrand[];
   snapshotDate: string | null;
+  // true when the RPC for brandPresence failed — UI shows an error state
+  // instead of misleading "0 stores" rows that look like real data.
+  presenceError: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -316,22 +319,19 @@ export function Dashboard() {
         const ownBrands = userBrands.filter((b) => b.is_own_brand);
         const ownBrandNames = ownBrands.map((b) => b.brand_name);
 
-        const [marketRes, unionRes, presencePairs] = await Promise.all([
+        // One MV-backed call for all own-brand presence counts. Replaces the
+        // previous Promise.all of N separate get_brand_store_count RPCs —
+        // under infra stress, those fanned out and some would 5xx while
+        // others succeeded, leaving every failed row at store_count=0 on the
+        // widget. One round-trip either all-works or cleanly errors.
+        const [marketRes, unionRes, presenceRes] = await Promise.all([
           supabase.rpc("get_market_brand_rollup", { p_limit: 12 }),
           ownBrandNames.length
             ? supabase.rpc("get_brand_union_store_count", { p_brand_names: ownBrandNames })
             : Promise.resolve({ data: 0, error: null }),
-          ownBrands.length
-            ? Promise.all(
-                ownBrands.map(async (b) => {
-                  const { data, error } = await supabase.rpc("get_brand_store_count", {
-                    brand_name: b.brand_name,
-                  });
-                  if (error) return { brand_name: b.brand_name, store_count: 0 };
-                  return { brand_name: b.brand_name, store_count: (data as number) ?? 0 };
-                })
-              )
-            : Promise.resolve([] as BrandPresence[]),
+          ownBrandNames.length
+            ? supabase.rpc("get_own_brand_presence", { p_brand_names: ownBrandNames })
+            : Promise.resolve({ data: [] as BrandPresence[], error: null }),
         ]);
 
         const marketBrands: MarketBrand[] = (marketRes.data as MarketBrand[] ?? [])
@@ -339,9 +339,12 @@ export function Dashboard() {
           .slice(0, 8);
 
         const ownBrandStoreTotal = (unionRes.data as number) ?? 0;
-        const brandPresence: BrandPresence[] = presencePairs.sort(
-          (a, b) => b.store_count - a.store_count,
-        );
+        const presenceError = !!presenceRes.error;
+        const brandPresence: BrandPresence[] = presenceError
+          ? []
+          : ((presenceRes.data as BrandPresence[]) ?? []).sort(
+              (a, b) => b.store_count - a.store_count,
+            );
 
         const { data: snapData } = await supabase
           .from("daily_brand_metrics")
@@ -350,10 +353,10 @@ export function Dashboard() {
           .limit(1);
         const snapshotDate: string | null = snapData?.[0]?.date ?? null;
 
-        setHeavy({ brandPresence, ownBrandStoreTotal, marketBrands, snapshotDate });
+        setHeavy({ brandPresence, ownBrandStoreTotal, marketBrands, snapshotDate, presenceError });
       } catch (err) {
         console.error("Dashboard loadHeavy failed:", err);
-        setHeavy({ brandPresence: [], ownBrandStoreTotal: 0, marketBrands: [], snapshotDate: null });
+        setHeavy({ brandPresence: [], ownBrandStoreTotal: 0, marketBrands: [], snapshotDate: null, presenceError: true });
       } finally {
         setHeavyLoading(false);
       }
@@ -539,6 +542,14 @@ export function Dashboard() {
                 Set Up My Brands
               </button>
             </div>
+          ) : heavy?.presenceError ? (
+            <div className="flex flex-col items-center justify-center h-48 text-center gap-2">
+              <AlertTriangle className="w-7 h-7 text-muted-foreground/50" />
+              <p className="text-sm font-medium text-muted-foreground">Unable to load brand counts</p>
+              <p className="text-xs text-muted-foreground/70">
+                Supabase may be temporarily unavailable — refresh to retry
+              </p>
+            </div>
           ) : (
             <div className="space-y-1">
               {heavy?.brandPresence.map((bp) => (
@@ -560,7 +571,7 @@ export function Dashboard() {
                   </span>
                 </div>
               ))}
-              {heavy && (
+              {heavy && heavy.ownBrandStoreTotal > 0 && (
                 <p className="text-[10px] text-muted-foreground mt-3 pt-2 border-t border-border/50">
                   {heavy.ownBrandStoreTotal.toLocaleString()} total stores carry your brands across{" "}
                   {ownBrands.length} brand{ownBrands.length !== 1 ? "s" : ""}
